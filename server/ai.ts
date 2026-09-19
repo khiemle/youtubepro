@@ -9,6 +9,7 @@ import {
   TargetAudience,
   CreatorPersona,
 } from "@shared/schema";
+import { ZodError } from "zod";
 import { claudeText } from "./claude-cli";
 import { logProviderFailure, normalizeProviderError, ProviderError } from "./provider-errors";
 import {
@@ -22,6 +23,34 @@ import {
   type ScriptRegenerationOutput,
   type SectionRegenerationRequest,
 } from "./script-regeneration-contract";
+
+/**
+ * A text operation whose output still failed the parser or schema after the one repair attempt.
+ * `detail` stays in `message`, which never leaves the server; `publicMessage` is always a static literal.
+ */
+function invalidResponseError(code: string, publicMessage: string, detail: string): ProviderError {
+  return new ProviderError({
+    message: detail,
+    category: "invalid_response",
+    code,
+    status: 502,
+    retryable: false,
+    publicMessage,
+    suggestion: "Retry to request a corrected response.",
+  });
+}
+
+/** A compact, model-readable summary of a validation failure: the first five Zod issues, else the message. */
+function validationDetail(error: unknown): string {
+  const cause = error instanceof ProviderError ? error.cause : undefined;
+  if (cause instanceof ZodError) {
+    return cause.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
+  }
+  return error instanceof Error && error.message ? error.message : "Invalid response";
+}
 
 function getFormatGuidelines(format: VideoFormat): string {
   switch (format) {
@@ -222,7 +251,13 @@ Rules:
         validationError = error instanceof Error ? error.message : "Invalid script response";
       }
     }
-    if (!parsed) throw new Error(`Invalid script response after one repair attempt: ${validationError}`);
+    if (!parsed) {
+      throw invalidResponseError(
+        "AI_SCRIPT_INVALID",
+        "The AI returned an invalid script.",
+        `Invalid script response after one repair attempt: ${validationError}`,
+      );
+    }
     const scriptContent = parsed.script;
     const titles = parsed.titles;
 
@@ -348,7 +383,13 @@ Evidence rules:
         validationError = error instanceof Error ? error.message : "Invalid ideas response";
       }
     }
-    if (!parsed) throw new Error(`Invalid ideas response after one repair attempt: ${validationError}`);
+    if (!parsed) {
+      throw invalidResponseError(
+        "AI_IDEAS_INVALID",
+        "The AI returned invalid ideas.",
+        `Invalid ideas response after one repair attempt: ${validationError}`,
+      );
+    }
 
     return {
       ideas: parsed.ideas,
@@ -557,15 +598,31 @@ Provide a detailed analysis in the following JSON format:
 Return ONLY valid JSON, no additional text or markdown.`;
 
   try {
-    const responseText = await claudeText(prompt, { json: true });
-
-    return parseResearchInsightsResponse(
-      responseText,
-      snapshotId,
-      evidence.length,
-      new Date().toISOString(),
-      input.provenance.orderedVideoIds,
-    );
+    let lastValidationError: ProviderError | undefined;
+    let validationDetailText = "";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      // The call sits outside the inner try so a provider failure propagates instead of being retried.
+      const responseText = await claudeText(
+        attempt === 0
+          ? prompt
+          : `${prompt}\n\nYour previous response failed validation: ${validationDetailText}. Return a corrected strict JSON object only.`,
+        { json: true },
+      );
+      try {
+        return parseResearchInsightsResponse(
+          responseText,
+          snapshotId,
+          evidence.length,
+          new Date().toISOString(),
+          input.provenance.orderedVideoIds,
+        );
+      } catch (error) {
+        if (!(error instanceof ProviderError) || error.category !== "invalid_response") throw error;
+        lastValidationError = error;
+        validationDetailText = validationDetail(error);
+      }
+    }
+    throw lastValidationError;
   } catch (error: unknown) {
     logProviderFailure("Research insights", error);
     throw normalizeProviderError(error, "ai");
@@ -612,7 +669,11 @@ Return one strict JSON object with exactly one key, "titles", containing exactly
         validationError = error instanceof Error ? error.message : "Invalid title response";
       }
     }
-    throw new Error(`Invalid title response after one repair attempt: ${validationError}`);
+    throw invalidResponseError(
+      "AI_TITLES_INVALID",
+      "The AI returned invalid titles.",
+      `Invalid title response after one repair attempt: ${validationError}`,
+    );
   } catch (error: unknown) {
     logProviderFailure("Title regeneration", error);
     if (error instanceof ProviderError) throw error;
