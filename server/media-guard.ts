@@ -2,8 +2,18 @@ import { lookup } from "node:dns/promises";
 import net from "node:net";
 import { ProviderError } from "./provider-errors";
 
-/** Hosts Higgsfield media (result images and upload URLs) may live on. Live check #2 records the real hosts. */
-export const HIGGSFIELD_MEDIA_HOST_SUFFIXES = [".higgsfield.ai"] as const;
+/**
+ * Hosts Higgsfield media (result images and upload URLs) may live on. The two non-higgsfield.ai entries are
+ * exact hosts recorded by live check #2 on 2026-09-19. NEVER widen them to `.amazonaws.com` or
+ * `.cloudfront.net`: a broad entry would let a manipulated model reply direct the operator's reference
+ * images to an attacker's bucket. If Higgsfield rotates the input bucket (its name carries a date), uploads
+ * fail with HIGGSFIELD_BAD_MEDIA naming the new host, and this constant is updated.
+ */
+export const HIGGSFIELD_MEDIA_HOST_SUFFIXES = [
+  ".higgsfield.ai",
+  ".d8j0ntlcm91z4.cloudfront.net",
+  ".fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com",
+] as const;
 
 const MAX_REDIRECTS = 2;
 const DOWNLOAD_ATTEMPTS = 3;

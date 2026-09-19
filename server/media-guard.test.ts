@@ -80,6 +80,25 @@ describe("assertSafeMediaUrl with the default policy", () => {
     assert.equal(url.hostname, "cdn.higgsfield.ai");
   });
 
+  test("accepts the two exact hosts recorded by live check #2 and nothing wider", async () => {
+    for (const good of [
+      "https://d8j0ntlcm91z4.cloudfront.net/x.png?sig=1",
+      "https://fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com/uploads/a.png?X-Amz-Signature=1",
+    ]) {
+      const url = await assertSafeMediaUrl(good, resolvesPublic);
+      assert.equal(url.protocol, "https:", good);
+    }
+    for (const bad of [
+      "https://other-bucket.s3.amazonaws.com/x",
+      "https://other.cloudfront.net/x",
+      "https://evil-d8j0ntlcm91z4.cloudfront.net/x",
+      "https://d8j0ntlcm91z4.cloudfront.net.evil.example/x",
+    ]) {
+      const error = await rejection(assertSafeMediaUrl(bad, resolvesPublic));
+      assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA", bad);
+    }
+  });
+
   test("rejects other protocols, hosts, credentials and IP literals", async () => {
     for (const bad of [
       "http://cdn.higgsfield.ai/a.png",
