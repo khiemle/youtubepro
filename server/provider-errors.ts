@@ -5,6 +5,8 @@ export class ProviderError extends Error {
   readonly code: string;
   readonly status: number;
   readonly retryable: boolean;
+  readonly publicMessage?: string;
+  readonly suggestion?: string;
 
   constructor(options: {
     message: string;
@@ -12,6 +14,8 @@ export class ProviderError extends Error {
     code: string;
     status: number;
     retryable: boolean;
+    publicMessage?: string;
+    suggestion?: string;
     cause?: unknown;
   }) {
     super(options.message, { cause: options.cause });
@@ -20,10 +24,12 @@ export class ProviderError extends Error {
     this.code = options.code;
     this.status = options.status;
     this.retryable = options.retryable;
+    this.publicMessage = options.publicMessage;
+    this.suggestion = options.suggestion;
   }
 }
 
-type ProviderErrorContext = "youtube" | "ai";
+type ProviderErrorContext = "youtube" | "ai" | "claude" | "higgsfield";
 
 function categoryFromMessage(message: string): ProviderErrorCategory {
   const normalized = message.toLowerCase();
@@ -117,9 +123,16 @@ export function providerErrorPayload(error: ProviderError, contextLabel: string)
   };
 
   return {
-    ...copy[error.category],
+    error: error.publicMessage ?? copy[error.category].error,
+    suggestion: error.suggestion ?? copy[error.category].suggestion,
     code: error.code,
     category: error.category,
     retryable: error.retryable,
   };
+}
+
+/** Logs a provider failure by code only: never the message, cause, prompt, or response body. */
+export function logProviderFailure(scope: string, error: unknown): void {
+  const label = error instanceof ProviderError ? error.code : error instanceof Error ? error.name : "UnknownError";
+  console.error(`${scope} failed:`, label);
 }
