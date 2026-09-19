@@ -71,3 +71,58 @@ export function isGeminiImageModel(value: string): value is GeminiImageModel {
 export function getGeminiImageModelLabel(modelId: string): string {
   return GEMINI_IMAGE_MODELS.find((model) => model.id === modelId)?.label || modelId;
 }
+
+export const CLAUDE_TEXT_MODELS = [
+  {
+    id: "sonnet",
+    label: "Claude Sonnet",
+    description: "Recommended. The model this app was tested with.",
+  },
+  {
+    id: "opus",
+    label: "Claude Opus",
+    description: "Highest capability. Slower, and uses more of your Claude plan.",
+  },
+] as const;
+
+export const CLAUDE_TEXT_EFFORTS = [
+  {
+    id: "low",
+    label: "Low",
+    description: "Recommended. About a minute for the largest request.",
+  },
+  {
+    id: "medium",
+    label: "Medium",
+    description: "More careful reasoning. Slower.",
+  },
+  {
+    id: "high",
+    label: "High",
+    description: "Slowest. Can take several minutes.",
+  },
+] as const;
+
+export type ClaudeTextModel = (typeof CLAUDE_TEXT_MODELS)[number]["id"];
+export type ClaudeTextEffort = (typeof CLAUDE_TEXT_EFFORTS)[number]["id"];
+
+export const DEFAULT_CLAUDE_TEXT_MODEL: ClaudeTextModel = "sonnet";
+export const DEFAULT_CLAUDE_TEXT_EFFORT: ClaudeTextEffort = "low";
+
+export function isClaudeTextModel(value: string): value is ClaudeTextModel {
+  return CLAUDE_TEXT_MODELS.some((model) => model.id === value);
+}
+
+export function isClaudeTextEffort(value: string): value is ClaudeTextEffort {
+  return CLAUDE_TEXT_EFFORTS.some((effort) => effort.id === value);
+}
+
+export function resolveClaudeTextModel(env: NodeJS.ProcessEnv = process.env): ClaudeTextModel {
+  const value = env.CLAUDE_TEXT_MODEL?.trim() ?? "";
+  return isClaudeTextModel(value) ? value : DEFAULT_CLAUDE_TEXT_MODEL;
+}
+
+export function resolveClaudeTextEffort(env: NodeJS.ProcessEnv = process.env): ClaudeTextEffort {
+  const value = env.CLAUDE_TEXT_EFFORT?.trim() ?? "";
+  return isClaudeTextEffort(value) ? value : DEFAULT_CLAUDE_TEXT_EFFORT;
+}
