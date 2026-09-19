@@ -95,29 +95,111 @@ export function uploadFailed(cause?: unknown): ProviderError {
 // URL policy
 // ---------------------------------------------------------------------------
 
-export function isPrivateAddress(address: string): boolean {
-  const family = net.isIP(address);
-  if (family === 4) {
-    const [a, b] = address.split(".").map(Number);
-    return a === 0
-      || a === 10
-      || a === 127
-      || (a === 100 && b >= 64 && b <= 127)
-      || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31)
-      || (a === 192 && b === 168);
+function parseIpv4(text: string): [number, number, number, number] | null {
+  const parts = text.split(".");
+  if (parts.length !== 4) return null;
+  const octets: number[] = [];
+  for (let index = 0; index < 4; index += 1) {
+    if (!/^\d{1,3}$/.test(parts[index])) return null;
+    const value = Number(parts[index]);
+    if (value > 255) return null;
+    octets.push(value);
   }
-  if (family === 6) {
-    const lower = address.toLowerCase();
-    if (lower === "::" || lower === "::1") return true;
-    if (lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd")) return true;
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    return mapped ? isPrivateAddress(mapped[1]) : false;
+  return [octets[0], octets[1], octets[2], octets[3]];
+}
+
+function isReservedIpv4(a: number, b: number, c: number): boolean {
+  return a === 0 // 0.0.0.0/8
+    || a === 10 // 10.0.0.0/8
+    || (a === 100 && b >= 64 && b <= 127) // 100.64.0.0/10 carrier-grade NAT
+    || a === 127 // 127.0.0.0/8 loopback
+    || (a === 169 && b === 254) // 169.254.0.0/16 link-local
+    || (a === 172 && b >= 16 && b <= 31) // 172.16.0.0/12
+    || (a === 192 && b === 0 && (c === 0 || c === 2)) // 192.0.0.0/24 and 192.0.2.0/24
+    || (a === 192 && b === 168) // 192.168.0.0/16
+    || (a === 198 && (b === 18 || b === 19)) // 198.18.0.0/15 benchmarking
+    || (a === 198 && b === 51 && c === 100) // 198.51.100.0/24
+    || (a === 203 && b === 0 && c === 113) // 203.0.113.0/24
+    || a >= 224; // 224.0.0.0/4 multicast and 240.0.0.0/4 reserved
+}
+
+function parseHextets(part: string): number[] | null {
+  if (part === "") return [];
+  const groups = part.split(":");
+  const values: number[] = [];
+  for (let index = 0; index < groups.length; index += 1) {
+    if (!/^[0-9a-f]{1,4}$/.test(groups[index])) return null;
+    values.push(parseInt(groups[index], 16));
+  }
+  return values;
+}
+
+/** Parses an IPv6 address into exactly 8 hextets, or null. Handles `::`, an embedded dotted IPv4 tail and a `%zone` suffix. */
+function parseIpv6(address: string): number[] | null {
+  let text = address.toLowerCase();
+  const zone = text.indexOf("%");
+  if (zone !== -1) text = text.slice(0, zone);
+
+  const lastColon = text.lastIndexOf(":");
+  if (lastColon === -1) return null;
+  const tail = text.slice(lastColon + 1);
+  if (tail.indexOf(".") !== -1) {
+    const octets = parseIpv4(tail);
+    if (!octets) return null;
+    text = `${text.slice(0, lastColon + 1)}${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
+  }
+
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = parseHextets(halves[0]);
+  const rest = halves.length === 2 ? parseHextets(halves[1]) : [];
+  if (!head || !rest) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const missing = 8 - head.length - rest.length;
+  if (missing < 1) return null;
+  const zeros: number[] = [];
+  for (let index = 0; index < missing; index += 1) zeros.push(0);
+  return head.concat(zeros, rest);
+}
+
+function zeroRange(hextets: number[], start: number, end: number): boolean {
+  for (let index = start; index < end; index += 1) {
+    if (hextets[index] !== 0) return false;
   }
   return true;
 }
 
-/** Throws HIGGSFIELD_BAD_MEDIA unless `raw` is an allowed protocol on an allowlisted hostname that resolves only to public addresses. */
+function isReservedIpv6(h: number[]): boolean {
+  if (zeroRange(h, 0, 6)) return true; // ::, ::1 and the deprecated IPv4-compatible form
+  if (zeroRange(h, 0, 5) && h[5] === 0xffff) return isReservedIpv4(h[6] >> 8, h[6] & 0xff, h[7] >> 8); // IPv4-mapped, either notation
+  return (h[0] & 0xffc0) === 0xfe80 // fe80::/10 link-local
+    || (h[0] & 0xffc0) === 0xfec0 // fec0::/10 site-local
+    || (h[0] & 0xfe00) === 0xfc00 // fc00::/7 unique local
+    || (h[0] & 0xff00) === 0xff00 // ff00::/8 multicast
+    || (h[0] === 0x0064 && h[1] === 0xff9b && zeroRange(h, 2, 6)) // 64:ff9b::/96 NAT64
+    || h[0] === 0x2002 // 2002::/16 6to4
+    || (h[0] === 0x2001 && (h[1] === 0x0000 || h[1] === 0x0db8)); // 2001::/32 Teredo and 2001:db8::/32 documentation
+}
+
+/** True for every private, reserved or special-purpose address, and for any input that is not a valid IP address. */
+export function isPrivateAddress(address: string): boolean {
+  const family = net.isIP(address);
+  if (family === 4) {
+    const octets = parseIpv4(address);
+    return octets === null || isReservedIpv4(octets[0], octets[1], octets[2]);
+  }
+  if (family === 6) {
+    const hextets = parseIpv6(address);
+    return hextets === null || isReservedIpv6(hextets);
+  }
+  return true;
+}
+
+/**
+ * Returns the parsed URL when `raw` is an allowed protocol on an allowlisted hostname that resolves only to public addresses.
+ * Throws HIGGSFIELD_BAD_MEDIA for policy failures, and a plain Error (not a ProviderError) when the host cannot be resolved,
+ * which callers treat as a transient failure.
+ */
 export async function assertSafeMediaUrl(raw: string, policy: MediaUrlPolicy = DEFAULT_MEDIA_POLICY): Promise<URL> {
   let url: URL;
   try {
@@ -140,7 +222,7 @@ export async function assertSafeMediaUrl(raw: string, policy: MediaUrlPolicy = D
   try {
     addresses = await policy.resolve(host);
   } catch (error) {
-    throw badMedia("Media host could not be resolved.", error);
+    throw new Error("Media host could not be resolved.", { cause: error });
   }
   if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
     throw badMedia("Media host resolves to a private or unusable address.");

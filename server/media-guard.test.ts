@@ -59,14 +59,41 @@ async function rejection(promise: Promise<unknown>): Promise<ProviderError> {
 }
 
 describe("isPrivateAddress", () => {
-  test("flags loopback, private, link-local and unusable addresses", () => {
-    for (const address of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.1.1", "0.0.0.0", "100.64.0.1", "::1", "::", "fe80::1", "fd00::1", "::ffff:10.0.0.1", "not-an-ip"]) {
+  test("refuses every reserved IPv4 range", () => {
+    for (const address of [
+      "0.0.0.0", "0.1.2.3", "10.1.2.3", "100.64.0.1", "100.127.255.255", "127.0.0.1", "127.255.255.255",
+      "169.254.1.1", "169.254.169.254", "172.16.0.1", "172.31.255.255", "192.0.0.1", "192.0.0.255", "192.0.2.1",
+      "192.168.1.1", "198.18.0.1", "198.19.255.255", "198.51.100.7", "203.0.113.9", "224.0.0.1", "239.255.255.255",
+      "240.0.0.1", "255.255.255.255",
+    ]) {
       assert.equal(isPrivateAddress(address), true, address);
     }
   });
 
-  test("allows public addresses", () => {
-    for (const address of ["8.8.8.8", "93.184.216.34", "172.32.0.1", "2606:4700:4700::1111"]) {
+  test("refuses every reserved IPv6 range, including the mapped and embedded IPv4 forms", () => {
+    for (const address of [
+      "::1", "::", "0:0:0:0:0:0:0:1", "::a00:1", "::808:808",
+      "fe80::1", "fea0::1", "febf::1", "fe80::1%eth0", "fec0::1", "fd00::1", "fc00::1", "ff02::1",
+      "64:ff9b::a00:1", "2002:0a00:0001::1", "2001:db8::1", "2001::1",
+      "::ffff:10.0.0.1", "::ffff:a00:1", "::ffff:7f00:1", "::ffff:169.254.169.254", "::ffff:0:0",
+    ]) {
+      assert.equal(isPrivateAddress(address), true, address);
+    }
+  });
+
+  test("refuses input that is not an IP address", () => {
+    for (const address of ["not-an-ip", "", "1:2:3:4:5:6:7:8:9", "1::2::3", ":::", "12345::1", "1.2.3", "999.1.1.1", "::ffff:999.0.0.1"]) {
+      assert.equal(isPrivateAddress(address), true, address);
+    }
+  });
+
+  test("allows ordinary public addresses", () => {
+    for (const address of [
+      "8.8.8.8", "93.184.216.34", "1.1.1.1", "172.32.0.1", "172.15.255.255", "100.63.255.255", "100.128.0.1",
+      "192.0.1.1", "198.20.0.1", "198.51.101.1", "203.0.114.1", "223.255.255.255",
+      "2606:4700:4700::1111", "2606:4700:4700:0:0:0:0:1111", "2606:4700:4700::1111%eth0", "2001:4860:4860::8888", "2a00:1450:4001:81b::200e",
+      "::ffff:8.8.8.8", "::ffff:808:808",
+    ]) {
       assert.equal(isPrivateAddress(address), false, address);
     }
   });
@@ -117,6 +144,17 @@ describe("assertSafeMediaUrl with the default policy", () => {
   test("rejects an allowlisted host that resolves to a private address", async () => {
     const error = await rejection(assertSafeMediaUrl("https://cdn.higgsfield.ai/a.png", { ...DEFAULT_MEDIA_POLICY, resolve: async () => ["10.0.0.5"] }));
     assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA");
+  });
+
+  test("reports a resolver failure as a plain Error, not as a policy refusal", async () => {
+    const failing: MediaUrlPolicy = { ...DEFAULT_MEDIA_POLICY, resolve: async () => { throw new Error("getaddrinfo EAI_AGAIN"); } };
+    await assert.rejects(assertSafeMediaUrl("https://cdn.higgsfield.ai/a.png", failing), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error instanceof ProviderError, false);
+      assert.match(error.message, /could not be resolved/);
+      assert.match(String((error as Error & { cause?: unknown }).cause), /EAI_AGAIN/);
+      return true;
+    });
   });
 });
 
@@ -172,6 +210,45 @@ describe("downloadImage", () => {
     assert.equal((await rejection(downloadImage(`${big}/a`, deps({ maxBytes: 100 })))).code, "HIGGSFIELD_BAD_MEDIA");
   });
 
+  test("stops a chunked body that outgrows the cap without a Content-Length, and does not retry", { timeout: 5_000 }, async () => {
+    let requests = 0;
+    const base = await startServer((_req, res) => {
+      requests += 1;
+      res.setHeader("content-type", "image/png");
+      res.write(Buffer.concat([PNG, Buffer.alloc(52)]));
+      for (let chunk = 0; chunk < 4; chunk += 1) res.write(Buffer.alloc(64, chunk));
+      res.end();
+    });
+    let declaredLength: string | null | undefined;
+    const testDeps = deps({
+      maxBytes: 100,
+      fetchImpl: async (input, init) => {
+        const response = await fetch(input, init);
+        declaredLength = response.headers.get("content-length");
+        return response;
+      },
+    });
+
+    const error = await rejection(downloadImage(`${base}/stream.png`, testDeps));
+
+    assert.equal(declaredLength, null, "the body must reach the streaming cap, not the declared-length check");
+    assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA");
+    assert.equal(requests, 1);
+    assert.deepEqual(testDeps.sleeps, []);
+  });
+
+  test("retries a resolver failure three times with backoff, then reports HIGGSFIELD_DOWNLOAD_FAILED", async () => {
+    let resolverCalls = 0;
+    const testDeps = deps({
+      policy: { ...LOCAL_POLICY, resolve: async () => { resolverCalls += 1; throw new Error("getaddrinfo EAI_AGAIN"); } },
+    });
+    const error = await rejection(downloadImage("http://localhost/a.png", testDeps));
+    assert.equal(error.code, "HIGGSFIELD_DOWNLOAD_FAILED");
+    assert.equal(error.retryable, true);
+    assert.equal(resolverCalls, 3);
+    assert.deepEqual(testDeps.sleeps, [500, 1_500]);
+  });
+
   test("follows a redirect that stays on an allowed host and refuses one that leaves it", async () => {
     const base = await startServer((req, res) => {
       if (req.url === "/start") { res.statusCode = 302; res.setHeader("location", "/final.png"); res.end(); }
@@ -215,5 +292,16 @@ describe("uploadBytes", () => {
   test("refuses an upload URL outside the policy", async () => {
     const error = await rejection(uploadBytes("https://evil.example/put", PNG, "image/png", deps({ policy: DEFAULT_MEDIA_POLICY })));
     assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA");
+  });
+
+  test("reports a resolver failure as HIGGSFIELD_UPLOAD_FAILED", async () => {
+    let resolverCalls = 0;
+    const failing = deps({
+      policy: { ...LOCAL_POLICY, resolve: async () => { resolverCalls += 1; throw new Error("getaddrinfo EAI_AGAIN"); } },
+    });
+    const error = await rejection(uploadBytes("http://localhost/put", PNG, "image/png", failing));
+    assert.equal(error.code, "HIGGSFIELD_UPLOAD_FAILED");
+    assert.equal(error.retryable, true);
+    assert.equal(resolverCalls, 1);
   });
 });
