@@ -26,6 +26,11 @@ export function readApiErrorBody(message: string): ApiErrorBody | null {
   }
 }
 
+/** The server's error `code` (for example `HIGGSFIELD_NOT_CONNECTED`) from a failed `apiRequest`, when its message carries one. */
+export function apiErrorCode(error: unknown): string | undefined {
+  return error instanceof Error ? readApiErrorBody(error.message)?.code : undefined;
+}
+
 /** The most useful text for a failed API call: the server's suggestion, else its error, else the raw message. */
 export function apiErrorText(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : String(error ?? "");

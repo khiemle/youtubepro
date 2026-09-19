@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { apiErrorText } from "@shared/api-error-message";
+import { apiErrorCode, apiErrorText } from "@shared/api-error-message";
 
 interface ModelOption {
   id: string;
@@ -309,7 +309,9 @@ export default function SettingsPage() {
     } catch (error: unknown) {
       setCredits(null);
       setTestError(apiErrorText(error, "Could not reach Higgsfield."));
-      setStatus((current) => (current ? { ...current, higgsfield: { connected: false } } : current));
+      if (apiErrorCode(error) === "HIGGSFIELD_NOT_CONNECTED") {
+        setStatus((current) => (current ? { ...current, higgsfield: { connected: false } } : current));
+      }
     } finally {
       setIsTesting(false);
     }

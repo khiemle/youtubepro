@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { apiErrorText, readApiErrorBody } from "./api-error-message";
+import { apiErrorCode, apiErrorText, readApiErrorBody } from "./api-error-message";
 
 const body = JSON.stringify({
   error: "Claude Code is not signed in.",
@@ -41,5 +41,21 @@ describe("apiErrorText", () => {
     assert.equal(apiErrorText(new Error('500: {"error":"Something broke"}'), "fallback"), "Something broke");
     assert.equal(apiErrorText(new Error("Network request failed"), "fallback"), "Network request failed");
     assert.equal(apiErrorText(undefined, "fallback"), "fallback");
+  });
+});
+
+describe("apiErrorCode", () => {
+  test("returns the server's error code from an apiRequest error message", () => {
+    assert.equal(apiErrorCode(new Error('503: {"error":"x","code":"HIGGSFIELD_NOT_CONNECTED"}')), "HIGGSFIELD_NOT_CONNECTED");
+    assert.equal(apiErrorCode(new Error(`401: ${body}`)), "CLAUDE_NOT_SIGNED_IN");
+  });
+
+  test("returns undefined when there is no error code to read", () => {
+    assert.equal(apiErrorCode(new Error("Network request failed")), undefined);
+    assert.equal(apiErrorCode(new Error('500: {"error":"x"}')), undefined);
+    assert.equal(apiErrorCode(new Error('500: {"error":"x","code":5}')), undefined);
+    assert.equal(apiErrorCode('503: {"error":"x","code":"HIGGSFIELD_NOT_CONNECTED"}'), undefined);
+    assert.equal(apiErrorCode({ code: "HIGGSFIELD_NOT_CONNECTED" }), undefined);
+    assert.equal(apiErrorCode(undefined), undefined);
   });
 });
