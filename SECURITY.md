@@ -11,7 +11,7 @@ Include the affected route or component, reproduction steps, expected impact, an
 The current supported configuration is local-first:
 
 - The server binds to `127.0.0.1` by default.
-- YouTube and Gemini keys remain in the server environment.
+- The YouTube key remains in the server environment. Claude and Higgsfield use the local Claude Code sign-in, and the server removes `ANTHROPIC_API_KEY` from the `claude` child environment.
 - The local Settings endpoint accepts same-origin loopback requests only.
 - Billable routes use an in-memory per-process rate limiter.
 

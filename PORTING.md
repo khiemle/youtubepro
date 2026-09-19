@@ -5,15 +5,15 @@ The app is local-first and has no runtime database or authentication layer. For 
 ## Portable boundaries
 
 - Research backend: `server/youtube.ts`, `server/provider-errors.ts`, and the Research schemas in `shared/schema.ts`.
-- Evidence and AI backend: `server/ai.ts`, `shared/evidence-contracts.ts`, and `server/script-regeneration-contract.ts`.
-- Thumbnail backend: `server/thumbnail-contract.ts`, `server/provider-models.ts`, and the Thumbnail routes in `server/routes.ts`.
+- Evidence and AI backend: `server/ai.ts`, `server/claude-cli.ts`, `shared/evidence-contracts.ts`, and `server/script-regeneration-contract.ts`.
+- Thumbnail backend: `server/thumbnail-contract.ts`, `server/higgsfield-image.ts`, `server/media-guard.ts`, `server/provider-models.ts`, and the Thumbnail routes in `server/routes.ts`.
 - Client workflow: the Research, Script, Thumbnail, and Settings pages plus `client/src/lib/workflow-context.tsx`.
 
 The browser expects same-origin `/api` routes. The UI uses Wouter, TanStack Query, shadcn/ui primitives, and the design tokens in `client/src/index.css`.
 
 ## Security requirements when porting
 
-- Keep Google credentials on the server.
+- Keep credentials out of the repository and the browser. Claude and Higgsfield authenticate through the local Claude Code sign-in, so the server depends on a local `claude` login and must not be deployed remotely without replacing that transport. The YouTube key stays in the server environment.
 - Preserve strict Zod validation and snapshot identity checks.
 - Replace the in-memory limiter with a shared limiter before running multiple instances.
 - Local Settings intentionally rejects normal proxy-forwarded requests. Disable it or place it behind separate authenticated administration if the application becomes remote.
@@ -25,6 +25,7 @@ The browser expects same-origin `/api` routes. The UI uses Wouter, TanStack Quer
 - `GET /api/youtube/search`
 - `GET /api/settings/status`
 - `PUT /api/settings/api-keys`
+- `POST /api/settings/test-higgsfield`
 - `POST /api/research/insights`
 - `POST /api/ideas/generate`
 - `POST /api/script/generate`

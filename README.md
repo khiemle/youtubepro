@@ -8,7 +8,7 @@
   Research, understand, write, and package a YouTube video in one local-first workflow.
 </p>
 
-YouTube Pro is an evidence-grounded workspace for YouTube research, idea selection, script writing, and thumbnail creation. It combines public YouTube Data API v3 records with Gemini analysis while keeping API keys on the server.
+YouTube Pro is an evidence-grounded workspace for YouTube research, idea selection, script writing, and thumbnail creation. It combines public YouTube Data API v3 records with Claude analysis, run through your local Claude Code sign-in, while keeping keys on the server.
 
 YouTube Pro is an independent project. It is not affiliated with, endorsed by, or sponsored by YouTube or Google. YouTube and Google product names are trademarks of their respective owners.
 
@@ -51,7 +51,7 @@ These screenshots come from a live local development build using public YouTube 
 The product follows one continuous workflow:
 
 1. **Research**: Search up to 50 public YouTube videos, review the overview, analytics, coverage, and every returned video.
-2. **AI Insights**: Gemini analyzes the exact active research snapshot. Claims retain their snapshot identity and source video IDs, or are explicitly labeled as aggregate inference or as requiring YouTube Studio.
+2. **AI Insights**: Claude analyzes the exact active research snapshot. Claims retain their snapshot identity and source video IDs, or are explicitly labeled as aggregate inference or as requiring YouTube Studio.
 3. **Grounded Ideas**: Ideas generate automatically after valid Insights. Select one idea, then explicitly proceed to Script Writer.
 4. **Script Writer**: Generate and edit a script from the selected idea package and its evidence. Section and paragraph regeneration use the same bounded evidence context.
 5. **Thumbnail Creator**: Use the selected promise and thumbnail concept, outcome-oriented presets, editable controls, and up to three permitted references.
@@ -64,7 +64,8 @@ Each press of **New Workflow** creates a separate local project. The sidebar kee
 
 - Node.js 22.12 or newer. CI verifies Node.js 22.12 and the current Node.js 24 LTS line.
 - A YouTube Data API v3 key for Research.
-- A Gemini API key for Insights, Ideas, scripts, and thumbnails.
+- Claude Code, signed in (run `claude`, then `/login`), for Insights, Ideas, scripts, and thumbnail suggestions. No Claude API key is used.
+- Higgsfield connected to Claude Code for thumbnail images: `claude mcp add --transport http higgsfield https://mcp.higgsfield.ai/mcp`, then `/mcp` inside `claude` to sign in. Each thumbnail spends Higgsfield credits.
 
 Copy the example configuration and fill it locally:
 
@@ -83,11 +84,16 @@ You can instead start without keys and enter them in **Settings**. Settings writ
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 search and enrichment | Required for Research |
-| `GEMINI_API_KEY` | Gemini text and image generation | Required for AI features |
-| `GEMINI_TEXT_MODEL` | Research, Ideas, Script, and regeneration model | `gemini-3.7-flash` |
-| `GEMINI_IMAGE_MODEL` | Thumbnail generation model | `gemini-3.1-flash-image` |
+| `CLAUDE_TEXT_MODEL` | Research, Ideas, Script, and regeneration model (`sonnet` or `opus`) | `sonnet` |
+| `CLAUDE_TEXT_EFFORT` | Claude effort level (`low`, `medium`, `high`) | `low` |
+| `HIGGSFIELD_IMAGE_MODEL` | Thumbnail image model | `gpt_image_2_5` |
+| `HIGGSFIELD_IMAGE_QUALITY` | Quality tier, or resolution for `seedream_v5_pro` | `medium` |
+| `CLAUDE_BIN` | Path to the `claude` executable | `claude` |
+| `CLAUDE_MAX_CONCURRENCY` | Maximum simultaneous `claude` processes (1-16) | `3` |
 | `PORT` | Local HTTP port | `5000` |
 | `HOST` | Bind address | `127.0.0.1` |
+
+Upgrading from the Gemini version: `GEMINI_*` variables in an existing `.env` are no longer used. They are ignored, not deleted, so you can remove them.
 
 The Settings page exposes the server allowlist and its current descriptions. Models are not hardcoded by the client. Changing the allowlist in `server/provider-models.ts` changes the available Settings options.
 
@@ -100,7 +106,7 @@ The Settings page exposes the server allowlist and its current descriptions. Mod
 - Script input: topic up to 500 characters, custom tone traits up to 300, notes up to 5,000, script or section content up to 80,000 where applicable.
 - Thumbnail references: PNG or JPEG, 128 to 4096 pixels, at most 5 MB after preparation per image, 12 MB decoded total, and no more than three references. The browser also rejects source files over 10 MB before preparation.
 - Global JSON body: 18 MB, needed for the bounded base64 thumbnail references. URL-encoded input is limited to 64 KB and 100 parameters.
-- Billable YouTube and Gemini routes: 10 requests per client address per 60 seconds in this single-process local server.
+- Billable YouTube and AI routes: 10 requests per client address per 60 seconds in this single-process local server.
 
 ## Privacy and access model
 
@@ -112,7 +118,7 @@ The Settings page exposes the server allowlist and its current descriptions. Mod
 - Do not expose the server directly to the internet. If remote access is required, add authentication and rate limiting at a trusted gateway, and disable or separately protect local Settings.
 - The in-memory rate limiter is per process. It is suitable for this local-first default, not a distributed public deployment.
 
-Gemini image outputs include Google's invisible SynthID provenance. The application does not add a visible watermark and does not claim SynthID can be disabled.
+Thumbnail images come from the selected Higgsfield model, so any provenance metadata depends on that model. The application adds no visible watermark.
 
 ## Commands
 
@@ -130,17 +136,15 @@ Continuous integration runs the test suite, TypeScript check, and production bui
 
 - React 18, TypeScript, Vite, Tailwind CSS, and shadcn/ui
 - Express 5
-- Google Gemini through `@google/genai`
+- Claude Code (`claude -p`) for text and Higgsfield's MCP server for thumbnail images
 - YouTube Data API v3
 - No server-side runtime database, session store, Passport authentication, or Replit-managed AI proxy
 
 ## Quotas and costs
 
-YouTube search is quota-expensive compared with video and channel enrichment. Gemini limits and pricing vary by model and account. Check the current official documentation before changing models or making the server remotely accessible:
+YouTube search is quota-expensive compared with video and channel enrichment. Claude usage counts against your Claude plan, and Higgsfield generations spend Higgsfield credits (a 16:9 medium-quality `gpt_image_2_5` image was 1 credit when this was written). Check the current official documentation before changing models or making the server remotely accessible:
 
 - [YouTube Data API quota costs](https://developers.google.com/youtube/v3/determine_quota_cost)
-- [Gemini pricing](https://ai.google.dev/pricing)
-- [Gemini image generation and SynthID](https://ai.google.dev/gemini-api/docs/image-generation)
 
 ## License
 

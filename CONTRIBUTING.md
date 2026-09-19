@@ -21,7 +21,7 @@ npm run check
 npm run build
 ```
 
-The automated suite uses fixtures and mocks. It must not spend YouTube or Gemini quota.
+The automated suite uses fixtures and a fake `claude` executable. It must not spend YouTube quota, Claude usage, or Higgsfield credits. Live checks are opt-in: `npm run live:claude -- text`, and `npm run live:claude -- image --spend` (about 1-2 Higgsfield credits per image).
 
 ## Pull requests
 
