@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, test } from "node:test";
+import { afterEach, describe, mock, test } from "node:test";
 import {
   DEFAULT_MEDIA_POLICY,
   assertSafeMediaUrl,
@@ -111,11 +111,14 @@ describe("assertSafeMediaUrl with the default policy", () => {
     for (const good of [
       "https://d8j0ntlcm91z4.cloudfront.net/x.png?sig=1",
       "https://fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com/uploads/a.png?X-Amz-Signature=1",
+      "https://cdn.higgsfield.ai/x",
     ]) {
       const url = await assertSafeMediaUrl(good, resolvesPublic);
       assert.equal(url.protocol, "https:", good);
     }
     for (const bad of [
+      "https://evil.d8j0ntlcm91z4.cloudfront.net/x",
+      "https://a.fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com/x",
       "https://other-bucket.s3.amazonaws.com/x",
       "https://other.cloudfront.net/x",
       "https://evil-d8j0ntlcm91z4.cloudfront.net/x",
@@ -124,6 +127,19 @@ describe("assertSafeMediaUrl with the default policy", () => {
       const error = await rejection(assertSafeMediaUrl(bad, resolvesPublic));
       assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA", bad);
     }
+  });
+
+  test("logs only the refused hostname, never the URL, query or fragment", async () => {
+    const logged: unknown[][] = [];
+    const restore = mock.method(console, "error", (...args: unknown[]) => { logged.push(args); });
+    try {
+      const error = await rejection(assertSafeMediaUrl("https://evil.example/x?sig=SECRET#frag", resolvesPublic));
+      assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA");
+    } finally {
+      restore.mock.restore();
+    }
+    assert.deepEqual(logged, [["Media host refused by the allowlist:", "evil.example"]]);
+    assert.equal(JSON.stringify(logged).includes("SECRET"), false);
   });
 
   test("rejects other protocols, hosts, credentials and IP literals", async () => {

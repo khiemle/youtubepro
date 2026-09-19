@@ -2,17 +2,20 @@ import { lookup } from "node:dns/promises";
 import net from "node:net";
 import { ProviderError } from "./provider-errors";
 
+/** Host suffixes Higgsfield media may live on: the entry itself and any subdomain of it. */
+export const HIGGSFIELD_MEDIA_HOST_SUFFIXES = [".higgsfield.ai"] as const;
+
 /**
- * Hosts Higgsfield media (result images and upload URLs) may live on. The two non-higgsfield.ai entries are
- * exact hosts recorded by live check #2 on 2026-09-19. NEVER widen them to `.amazonaws.com` or
- * `.cloudfront.net`: a broad entry would let a manipulated model reply direct the operator's reference
- * images to an attacker's bucket. If Higgsfield rotates the input bucket (its name carries a date), uploads
- * fail with HIGGSFIELD_BAD_MEDIA naming the new host, and this constant is updated.
+ * Exact hosts recorded by live check #2 on 2026-09-19. They are matched exactly, with no subdomains:
+ * `*.s3.amazonaws.com` is wildcard DNS and bucket names may contain dots, so a suffix match would let an
+ * attacker register a matching subdomain. NEVER widen these to `.amazonaws.com` or `.cloudfront.net`: a
+ * broad entry would let a manipulated model reply direct the operator's reference images to an attacker's
+ * bucket. When Higgsfield rotates the dated input bucket, uploads fail with HIGGSFIELD_BAD_MEDIA and the
+ * refused host appears in the server log (see `assertSafeMediaUrl`); update this constant then.
  */
-export const HIGGSFIELD_MEDIA_HOST_SUFFIXES = [
-  ".higgsfield.ai",
-  ".d8j0ntlcm91z4.cloudfront.net",
-  ".fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com",
+export const HIGGSFIELD_MEDIA_EXACT_HOSTS = [
+  "d8j0ntlcm91z4.cloudfront.net",
+  "fast-and-furious-input-prod-20250325165756276100000002.s3.amazonaws.com",
 ] as const;
 
 const MAX_REDIRECTS = 2;
@@ -25,6 +28,8 @@ export interface MediaUrlPolicy {
   protocols: readonly string[];
   /** Entries match the host itself and any subdomain; a leading dot is optional. */
   hostSuffixes: readonly string[];
+  /** Entries match the host exactly (case-insensitive), never a subdomain. */
+  exactHosts?: readonly string[];
   resolve: (hostname: string) => Promise<string[]>;
 }
 
@@ -38,6 +43,7 @@ export interface MediaDeps {
 export const DEFAULT_MEDIA_POLICY: MediaUrlPolicy = {
   protocols: ["https:"],
   hostSuffixes: HIGGSFIELD_MEDIA_HOST_SUFFIXES,
+  exactHosts: HIGGSFIELD_MEDIA_EXACT_HOSTS,
   resolve: async (hostname) => (await lookup(hostname, { all: true })).map((entry) => entry.address),
 };
 
@@ -215,8 +221,13 @@ export async function assertSafeMediaUrl(raw: string, policy: MediaUrlPolicy = D
   const allowed = policy.hostSuffixes.some((suffix) => {
     const bare = suffix.replace(/^\./, "").toLowerCase();
     return host === bare || host.endsWith(`.${bare}`);
-  });
-  if (!allowed) throw badMedia(`Media host ${host} is not on the allowlist.`);
+  }) || (policy.exactHosts ?? []).some((entry) => host === entry.toLowerCase());
+  if (!allowed) {
+    // The single deliberate exception to the codes-only log rule: a hostname is neither a prompt, an
+    // envelope, a message nor a body, and it is exactly what the operator needs when the bucket rotates.
+    console.error("Media host refused by the allowlist:", host);
+    throw badMedia(`Media host ${host} is not on the allowlist.`);
+  }
 
   let addresses: string[];
   try {
