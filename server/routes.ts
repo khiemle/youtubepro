@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { searchVideos } from "./youtube";
 import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnail, generateThumbnailSuggestions, extractNarrationText } from "./ai";
+import { testHiggsfieldConnection } from "./higgsfield-image";
 import { ideaGenerationRequestSchema, researchInsightsRequestSchema, searchFiltersSchema, scriptInputSchema } from "@shared/schema";
 import { z } from "zod";
 import { apiKeySettingsSchema, getApiKeyStatus, isLocalSettingsRequest, saveApiKeySettings } from "./settings";
@@ -60,12 +61,12 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  app.get("/api/settings/status", (req, res) => {
+  app.get("/api/settings/status", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     if (!isLocalSettingsRequest(req)) {
       return res.status(403).json({ error: "Settings are available only from this machine." });
     }
-    return res.json(getApiKeyStatus());
+    return res.json(await getApiKeyStatus());
   });
 
   app.put("/api/settings/api-keys", async (req, res) => {
@@ -82,6 +83,20 @@ export async function registerRoutes(
       return res.status(400).json({
         error: error?.message || "Unable to save API settings.",
       });
+    }
+  });
+
+  app.post("/api/settings/test-higgsfield", rateLimit, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isLocalSettingsRequest(req)) {
+      return res.status(403).json({ error: "Settings are available only from this machine." });
+    }
+
+    try {
+      return res.json(await testHiggsfieldConnection());
+    } catch (error: unknown) {
+      const providerError = normalizeProviderError(error, "higgsfield");
+      return res.status(providerError.status).json(providerErrorPayload(providerError, "Higgsfield connection test"));
     }
   });
 

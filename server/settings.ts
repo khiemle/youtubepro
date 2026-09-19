@@ -2,42 +2,59 @@ import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Request } from "express";
 import { z } from "zod";
-import { configureGeminiApiKey, configureGeminiModels } from "./ai";
+import { getClaudeStatus } from "./claude-cli";
+import { getHiggsfieldConnectionState } from "./higgsfield-image";
 import {
-  DEFAULT_GEMINI_IMAGE_MODEL,
-  DEFAULT_GEMINI_TEXT_MODEL,
-  GEMINI_IMAGE_MODELS,
-  GEMINI_TEXT_MODELS,
-  isGeminiImageModel,
-  isGeminiTextModel,
-  type GeminiImageModel,
-  type GeminiTextModel,
+  CLAUDE_TEXT_EFFORTS,
+  CLAUDE_TEXT_MODELS,
+  HIGGSFIELD_IMAGE_MODELS,
+  getHiggsfieldImageModel,
+  isClaudeTextEffort,
+  isClaudeTextModel,
+  isHiggsfieldImageModel,
+  isHiggsfieldImageTier,
+  resolveClaudeTextEffort,
+  resolveClaudeTextModel,
+  resolveHiggsfieldImageModel,
+  resolveHiggsfieldImageTier,
 } from "./provider-models";
 
 const ENV_PATH = path.resolve(process.cwd(), ".env");
 const ENV_TEMP_PATH = path.resolve(process.cwd(), ".env.tmp");
 const SUPPORTED_KEYS = [
   "YOUTUBE_API_KEY",
-  "GEMINI_API_KEY",
-  "GEMINI_TEXT_MODEL",
-  "GEMINI_IMAGE_MODEL",
+  "CLAUDE_TEXT_MODEL",
+  "CLAUDE_TEXT_EFFORT",
+  "HIGGSFIELD_IMAGE_MODEL",
+  "HIGGSFIELD_IMAGE_QUALITY",
 ] as const;
 
 type SupportedKey = (typeof SUPPORTED_KEYS)[number];
 
 export interface ApiKeySettings {
   youtubeApiKey?: string;
-  geminiApiKey?: string;
-  geminiTextModel?: string;
-  geminiImageModel?: string;
+  claudeTextModel?: string;
+  claudeTextEffort?: string;
+  higgsfieldImageModel?: string;
+  higgsfieldImageQuality?: string;
 }
 
 export const apiKeySettingsSchema = z.object({
   youtubeApiKey: z.string().trim().min(8).max(512).optional(),
-  geminiApiKey: z.string().trim().min(8).max(512).optional(),
-  geminiTextModel: z.string().refine(isGeminiTextModel, "Select a supported Gemini text model.").optional(),
-  geminiImageModel: z.string().refine(isGeminiImageModel, "Select a supported Gemini image model.").optional(),
-}).strict();
+  claudeTextModel: z.string().refine(isClaudeTextModel, "Select a supported Claude model.").optional(),
+  claudeTextEffort: z.string().refine(isClaudeTextEffort, "Select a supported effort level.").optional(),
+  higgsfieldImageModel: z.string().refine(isHiggsfieldImageModel, "Select a supported Higgsfield image model.").optional(),
+  higgsfieldImageQuality: z.string().trim().min(1).max(16).optional(),
+}).strict().superRefine((settings, ctx) => {
+  if (settings.higgsfieldImageModel && settings.higgsfieldImageQuality
+    && !isHiggsfieldImageTier(settings.higgsfieldImageModel, settings.higgsfieldImageQuality)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["higgsfieldImageQuality"],
+      message: "Select a quality supported by this model.",
+    });
+  }
+});
 
 function isLoopbackAddress(address: string | undefined): boolean {
   if (!address) return false;
@@ -117,24 +134,55 @@ export function isLocalSettingsRequest(req: Request): boolean {
   });
 }
 
-export function getApiKeyStatus() {
-  const textModel = isGeminiTextModel(process.env.GEMINI_TEXT_MODEL || "")
-    ? process.env.GEMINI_TEXT_MODEL as GeminiTextModel
-    : DEFAULT_GEMINI_TEXT_MODEL;
-  const imageModel = isGeminiImageModel(process.env.GEMINI_IMAGE_MODEL || "")
-    ? process.env.GEMINI_IMAGE_MODEL as GeminiImageModel
-    : DEFAULT_GEMINI_IMAGE_MODEL;
+export interface ModelSettings {
+  text: string;
+  textEffort: string;
+  image: string;
+  imageQuality: string;
+}
 
+function currentModelSettings(): ModelSettings {
+  return {
+    text: resolveClaudeTextModel(),
+    textEffort: resolveClaudeTextEffort(),
+    image: resolveHiggsfieldImageModel().id,
+    imageQuality: resolveHiggsfieldImageTier(),
+  };
+}
+
+export async function getApiKeyStatus() {
   return {
     youtube: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
-    gemini: Boolean(process.env.GEMINI_API_KEY?.trim()),
+    claude: await getClaudeStatus(),
+    higgsfield: { connected: getHiggsfieldConnectionState() },
     models: {
-      text: textModel,
-      image: imageModel,
-      textOptions: GEMINI_TEXT_MODELS,
-      imageOptions: GEMINI_IMAGE_MODELS,
+      ...currentModelSettings(),
+      textOptions: CLAUDE_TEXT_MODELS,
+      effortOptions: CLAUDE_TEXT_EFFORTS,
+      imageOptions: HIGGSFIELD_IMAGE_MODELS,
     },
   };
+}
+
+/** Merges an update into the current model settings and validates the result. Pure: it never touches the environment or disk. */
+export function planSettingsUpdate(input: ApiKeySettings, current: ModelSettings): ModelSettings {
+  const image = input.higgsfieldImageModel ?? current.image;
+  const imageQuality = input.higgsfieldImageQuality
+    ?? (isHiggsfieldImageTier(image, current.imageQuality)
+      ? current.imageQuality
+      : getHiggsfieldImageModel(image)?.defaultTier ?? "");
+  const planned: ModelSettings = {
+    text: input.claudeTextModel ?? current.text,
+    textEffort: input.claudeTextEffort ?? current.textEffort,
+    image,
+    imageQuality,
+  };
+
+  if (!isClaudeTextModel(planned.text)) throw new Error("Select a supported Claude model.");
+  if (!isClaudeTextEffort(planned.textEffort)) throw new Error("Select a supported effort level.");
+  if (!isHiggsfieldImageModel(planned.image)) throw new Error("Select a supported Higgsfield image model.");
+  if (!isHiggsfieldImageTier(planned.image, planned.imageQuality)) throw new Error("Select a quality supported by this model.");
+  return planned;
 }
 
 function validateApiKey(value: unknown, label: string): string | undefined {
@@ -171,22 +219,14 @@ function setEnvValue(contents: string, key: SupportedKey, value: string): string
 
 export async function saveApiKeySettings(input: ApiKeySettings) {
   const youtubeApiKey = validateApiKey(input.youtubeApiKey, "YouTube API key");
-  const geminiApiKey = validateApiKey(input.geminiApiKey, "Gemini API key");
-  const currentStatus = getApiKeyStatus();
-  const textModel = input.geminiTextModel ?? currentStatus.models.text;
-  const imageModel = input.geminiImageModel ?? currentStatus.models.image;
+  const planned = planSettingsUpdate(input, currentModelSettings());
 
-  if (!youtubeApiKey && !geminiApiKey
-    && input.geminiTextModel === undefined
-    && input.geminiImageModel === undefined) {
+  if (!youtubeApiKey
+    && input.claudeTextModel === undefined
+    && input.claudeTextEffort === undefined
+    && input.higgsfieldImageModel === undefined
+    && input.higgsfieldImageQuality === undefined) {
     throw new Error("Enter a replacement key or select a model to save.");
-  }
-
-  if (!isGeminiTextModel(textModel)) {
-    throw new Error("Select a supported Gemini text model.");
-  }
-  if (!isGeminiImageModel(imageModel)) {
-    throw new Error("Select a supported Gemini image model.");
   }
 
   let contents = "";
@@ -196,22 +236,21 @@ export async function saveApiKeySettings(input: ApiKeySettings) {
     if (error?.code !== "ENOENT") throw error;
   }
 
-  if (youtubeApiKey) {
-    contents = setEnvValue(contents, "YOUTUBE_API_KEY", youtubeApiKey);
-  }
-  if (geminiApiKey) {
-    contents = setEnvValue(contents, "GEMINI_API_KEY", geminiApiKey);
-  }
-  contents = setEnvValue(contents, "GEMINI_TEXT_MODEL", textModel);
-  contents = setEnvValue(contents, "GEMINI_IMAGE_MODEL", imageModel);
+  if (youtubeApiKey) contents = setEnvValue(contents, "YOUTUBE_API_KEY", youtubeApiKey);
+  contents = setEnvValue(contents, "CLAUDE_TEXT_MODEL", planned.text);
+  contents = setEnvValue(contents, "CLAUDE_TEXT_EFFORT", planned.textEffort);
+  contents = setEnvValue(contents, "HIGGSFIELD_IMAGE_MODEL", planned.image);
+  contents = setEnvValue(contents, "HIGGSFIELD_IMAGE_QUALITY", planned.imageQuality);
 
   await writeFile(ENV_TEMP_PATH, contents, { encoding: "utf8", mode: 0o600 });
   await rename(ENV_TEMP_PATH, ENV_PATH);
   await chmod(ENV_PATH, 0o600);
 
   if (youtubeApiKey) process.env.YOUTUBE_API_KEY = youtubeApiKey;
-  if (geminiApiKey) configureGeminiApiKey(geminiApiKey);
-  configureGeminiModels(textModel, imageModel);
+  process.env.CLAUDE_TEXT_MODEL = planned.text;
+  process.env.CLAUDE_TEXT_EFFORT = planned.textEffort;
+  process.env.HIGGSFIELD_IMAGE_MODEL = planned.image;
+  process.env.HIGGSFIELD_IMAGE_QUALITY = planned.imageQuality;
 
   return getApiKeyStatus();
 }

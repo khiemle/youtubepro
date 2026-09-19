@@ -44,7 +44,17 @@ test("local Settings rejects forwarded, non-loopback, and cross-origin requests"
 
 test("Settings payload is strict, bounded, and model allowlisted", () => {
   assert.equal(apiKeySettingsSchema.safeParse({ youtubeApiKey: "x".repeat(513) }).success, false);
-  assert.equal(apiKeySettingsSchema.safeParse({ geminiTextModel: "unknown-model" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({ claudeTextModel: "unknown-model" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({ claudeTextEffort: "xhigh" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({ higgsfieldImageModel: "unknown-model" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({ higgsfieldImageModel: "gpt_image_2_5", higgsfieldImageQuality: "2k" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({ geminiTextModel: "gemini-3.7-flash" }).success, false);
+  assert.equal(apiKeySettingsSchema.safeParse({
+    claudeTextModel: "sonnet",
+    claudeTextEffort: "low",
+    higgsfieldImageModel: "seedream_v5_pro",
+    higgsfieldImageQuality: "1k",
+  }).success, true);
   assert.equal(apiKeySettingsSchema.safeParse({ unexpected: true }).success, false);
 });
 
