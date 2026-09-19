@@ -145,7 +145,8 @@ async function askForReply<T>(options: McpRunOptions, schema: z.ZodType<T>, runM
   if (reply) return reply;
   if (!run.sessionId) throw higgsfieldFailure("HIGGSFIELD_INCOMPLETE");
 
-  run = await runMcp({ ...options, prompt: REASK_PROMPT, resume: run.sessionId, maxTurns: 3 });
+  // The re-ask can follow a submitted job, so it gets no tools and cannot submit another one.
+  run = await runMcp({ ...options, prompt: REASK_PROMPT, allowedTools: [], resume: run.sessionId, maxTurns: 3 });
   reply = run.outOfTurns ? null : parseReply(run.result, schema);
   if (reply) return reply;
   throw higgsfieldFailure("HIGGSFIELD_INCOMPLETE");

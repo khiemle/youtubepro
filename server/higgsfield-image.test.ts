@@ -166,15 +166,20 @@ describe("generateThumbnail without reference images", () => {
   });
 
   test("rescues an unparseable reply and an out-of-turns run with one --resume re-ask", async () => {
+    const runTools = [HIGGSFIELD_TOOLS.generateBatch, HIGGSFIELD_TOOLS.jobsWait];
     let run = scripted(["I finished!", ok(`${base}/a.png`)]);
     await generateThumbnail("t", config, thumbnailDeps(run.runMcp));
     assert.equal(run.calls.length, 2);
     assert.equal(run.calls[1].resume, "sess-1");
     assert.match(run.calls[1].prompt, /Reply now with ONLY/);
+    assert.deepEqual(run.calls[0].allowedTools, runTools);
+    assert.deepEqual(run.calls[1].allowedTools, []);
 
     run = scripted([{ result: "", sessionId: "sess-2", outOfTurns: true }, ok(`${base}/a.png`)]);
     await generateThumbnail("t", config, thumbnailDeps(run.runMcp));
     assert.equal(run.calls[1].resume, "sess-2");
+    assert.deepEqual(run.calls[0].allowedTools, runTools);
+    assert.deepEqual(run.calls[1].allowedTools, []);
   });
 
   test("fails with HIGGSFIELD_INCOMPLETE when the re-ask does not help", async () => {

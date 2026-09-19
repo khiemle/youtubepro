@@ -178,6 +178,13 @@ describe("argument builders", () => {
     assert.equal(args[args.indexOf("--resume") + 1], "sess-9");
     assert.equal(args.includes("--effort"), false);
   });
+
+  test("an empty allowlist still produces a deny-everything profile", () => {
+    const args = buildMcpArgs({ model: "sonnet", effort: "low", allowedTools: [], maxTurns: 3, resume: "s" });
+    assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
+    assert.equal(args[args.indexOf("--tools") + 1], "");
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "");
+  });
 });
 
 describe("buildChildEnv", () => {
