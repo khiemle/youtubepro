@@ -25,6 +25,7 @@ Read `README.md` first. It describes the current product, local-first access mod
 - The retired login, initial password, Thumbnail unlock, Pro Script Studio, legacy Replit AI proxy, and database/session stack are not part of this product.
 - Do not add a license until the owner selects one.
 - Do not make live provider calls during automated verification.
+- The Higgsfield input bucket in `HIGGSFIELD_MEDIA_EXACT_HOSTS` (`server/media-guard.ts`) carries a date in its name. When uploads start failing with `HIGGSFIELD_BAD_MEDIA`, read the server log line `Media host refused by the allowlist: <host>` and update that constant; that hostname line is the only deliberate exception to the codes-only logging rule.
 
 ## Verification
 

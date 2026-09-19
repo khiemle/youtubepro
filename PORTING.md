@@ -13,7 +13,7 @@ The browser expects same-origin `/api` routes. The UI uses Wouter, TanStack Quer
 
 ## Security requirements when porting
 
-- Keep credentials out of the repository and the browser. Claude and Higgsfield authenticate through the local Claude Code sign-in, so the server depends on a local `claude` login and must not be deployed remotely without replacing that transport. The YouTube key stays in the server environment.
+- Keep credentials out of the repository and the browser. Claude uses the local Claude Code sign-in; Higgsfield uses its own OAuth session that Claude Code stores (created with `/mcp`). The server stores neither credential, so it must not be deployed remotely without replacing that transport. The YouTube key stays in the server environment.
 - Preserve strict Zod validation and snapshot identity checks.
 - Replace the in-memory limiter with a shared limiter before running multiple instances.
 - Local Settings intentionally rejects normal proxy-forwarded requests. Disable it or place it behind separate authenticated administration if the application becomes remote.

@@ -88,8 +88,8 @@ You can instead start without keys and enter them in **Settings**. Settings writ
 | `CLAUDE_TEXT_EFFORT` | Claude effort level (`low`, `medium`, `high`) | `low` |
 | `HIGGSFIELD_IMAGE_MODEL` | Thumbnail image model | `gpt_image_2_5` |
 | `HIGGSFIELD_IMAGE_QUALITY` | Quality tier, or resolution for `seedream_v5_pro` | `medium` |
-| `CLAUDE_BIN` | Path to the `claude` executable | `claude` |
-| `CLAUDE_MAX_CONCURRENCY` | Maximum simultaneous `claude` processes (1-16) | `3` |
+| `CLAUDE_BIN` | Path to the `claude` executable (env only) | `claude` |
+| `CLAUDE_MAX_CONCURRENCY` | Maximum simultaneous `claude` processes (1-16) (env only) | `3` |
 | `PORT` | Local HTTP port | `5000` |
 | `HOST` | Bind address | `127.0.0.1` |
 
