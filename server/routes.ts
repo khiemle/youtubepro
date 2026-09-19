@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { searchVideos } from "./youtube";
-import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnail, generateThumbnailSuggestions, extractNarrationText } from "./gemini";
+import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnail, generateThumbnailSuggestions, extractNarrationText } from "./ai";
 import { ideaGenerationRequestSchema, researchInsightsRequestSchema, searchFiltersSchema, scriptInputSchema } from "@shared/schema";
 import { z } from "zod";
 import { apiKeySettingsSchema, getApiKeyStatus, isLocalSettingsRequest, saveApiKeySettings } from "./settings";
@@ -154,7 +154,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: unknown) {
       console.error("Ideas generation error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini Ideas"));
     }
   });
@@ -175,7 +175,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: unknown) {
       console.error("Research insights error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini research"));
     }
   });
@@ -218,7 +218,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: unknown) {
       console.error("Section regeneration error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini section regeneration"));
     }
   });
@@ -241,7 +241,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: unknown) {
       console.error("Paragraph regeneration error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini paragraph regeneration"));
     }
   });
@@ -265,7 +265,7 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: unknown) {
       console.error("Thumbnail generation error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini image generation"));
     }
   });
@@ -288,7 +288,7 @@ export async function registerRoutes(
       res.json({ suggestions });
     } catch (error: unknown) {
       console.error("Thumbnail suggestions error:", error);
-      const providerError = normalizeProviderError(error, "gemini");
+      const providerError = normalizeProviderError(error, "ai");
       res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini thumbnail suggestions"));
     }
   });

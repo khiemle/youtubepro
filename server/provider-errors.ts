@@ -23,7 +23,7 @@ export class ProviderError extends Error {
   }
 }
 
-type ProviderErrorContext = "youtube" | "gemini";
+type ProviderErrorContext = "youtube" | "ai";
 
 function categoryFromMessage(message: string): ProviderErrorCategory {
   const normalized = message.toLowerCase();

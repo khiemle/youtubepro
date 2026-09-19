@@ -5,7 +5,7 @@ import {
   buildThumbnailPrompt,
   buildThumbnailSuggestionsPrompt,
   parseThumbnailSuggestions,
-} from "./gemini";
+} from "./ai";
 
 const config = {
   style: "tutorial" as const,
@@ -76,7 +76,7 @@ describe("thumbnail suggestion response parsing", () => {
     assert.throws(
       () => parseThumbnailSuggestions('["One", "Two"]'),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_THUMBNAIL_SUGGESTIONS_INVALID",
+        && error.code === "AI_THUMBNAIL_SUGGESTIONS_INVALID",
     );
   });
 });

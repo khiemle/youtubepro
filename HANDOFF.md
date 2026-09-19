@@ -10,7 +10,7 @@ Read `README.md` first. It describes the current product, local-first access mod
 - `client/src/pages/settings.tsx`: local provider status, replacement keys, and model selection.
 - `client/src/lib/workflow-context.tsx`: Research to Script to Thumbnail continuity.
 - `server/youtube.ts`: YouTube search, enrichment, provenance, partial-stage warnings, and deterministic snapshot identity.
-- `server/gemini.ts`: active Gemini text and image operations.
+- `server/ai.ts`: active Gemini text and image operations.
 - `server/routes.ts`: API surface and in-memory rate limiting.
 - `server/settings.ts`: local-only Settings policy and owner-only `.env` writes.
 - `shared/schema.ts` and `shared/evidence-contracts.ts`: public request, response, and evidence contracts.

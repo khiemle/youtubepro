@@ -19,7 +19,7 @@ import {
   isGeminiTextModel,
   type GeminiImageModel,
   type GeminiTextModel,
-} from "./gemini-models";
+} from "./provider-models";
 import {
   thumbnailSuggestionsSchema,
   type ThumbnailGenerationRequest,
@@ -423,7 +423,7 @@ export function parseResearchInsightsResponse(
     throw new ProviderError({
       message: "Gemini returned malformed research insight JSON.",
       category: "invalid_response",
-      code: "GEMINI_RESEARCH_INVALID_JSON",
+      code: "AI_RESEARCH_INVALID_JSON",
       status: 502,
       retryable: false,
       cause: error,
@@ -435,7 +435,7 @@ export function parseResearchInsightsResponse(
     throw new ProviderError({
       message: "Gemini research insights did not match the required schema.",
       category: "invalid_response",
-      code: "GEMINI_RESEARCH_SCHEMA_MISMATCH",
+      code: "AI_RESEARCH_SCHEMA_MISMATCH",
       status: 502,
       retryable: false,
       cause: parsed.error,
@@ -445,7 +445,7 @@ export function parseResearchInsightsResponse(
     throw new ProviderError({
       message: "Gemini research insights reported the wrong sample size.",
       category: "invalid_response",
-      code: "GEMINI_RESEARCH_SAMPLE_MISMATCH",
+      code: "AI_RESEARCH_SAMPLE_MISMATCH",
       status: 502,
       retryable: false,
     });
@@ -456,7 +456,7 @@ export function parseResearchInsightsResponse(
       throw new ProviderError({
         message: "Gemini research evidence referenced the wrong snapshot.",
         category: "invalid_response",
-        code: "GEMINI_RESEARCH_SNAPSHOT_MISMATCH",
+        code: "AI_RESEARCH_SNAPSHOT_MISMATCH",
         status: 502,
         retryable: false,
       });
@@ -469,7 +469,7 @@ export function parseResearchInsightsResponse(
       throw new ProviderError({
         message: "Gemini research evidence referenced an unknown source video.",
         category: "invalid_response",
-        code: "GEMINI_RESEARCH_UNKNOWN_SOURCE",
+        code: "AI_RESEARCH_UNKNOWN_SOURCE",
         status: 502,
         retryable: false,
         cause: error,
@@ -487,7 +487,7 @@ export async function generateResearchInsights(
     throw new ProviderError({
       message: "Gemini API key is not configured.",
       category: "missing_key",
-      code: "GEMINI_MISSING_KEY",
+      code: "AI_MISSING_KEY",
       status: 503,
       retryable: false,
     });
@@ -631,7 +631,7 @@ Return ONLY valid JSON, no additional text or markdown.`;
     );
   } catch (error: unknown) {
     console.error("Gemini API error:", error);
-    throw normalizeProviderError(error, "gemini");
+    throw normalizeProviderError(error, "ai");
   }
 }
 
@@ -695,7 +695,7 @@ async function generateScriptRegeneration(
     throw new ProviderError({
       message: "Gemini API key is not configured.",
       category: "missing_key",
-      code: "GEMINI_MISSING_KEY",
+      code: "AI_MISSING_KEY",
       status: 503,
       retryable: false,
     });
@@ -725,12 +725,12 @@ async function generateScriptRegeneration(
     throw new ProviderError({
       message: `Gemini returned an invalid script revision after one repair attempt: ${validationError}`,
       category: "invalid_response",
-      code: "GEMINI_SCRIPT_REGENERATION_INVALID",
+      code: "AI_SCRIPT_REGENERATION_INVALID",
       status: 502,
       retryable: false,
     });
   } catch (error: unknown) {
-    throw normalizeProviderError(error, "gemini");
+    throw normalizeProviderError(error, "ai");
   }
 }
 
@@ -939,12 +939,12 @@ export async function generateThumbnail(
     throw new ProviderError({
       message: "Gemini returned an invalid response without image data",
       category: "invalid_response",
-      code: "GEMINI_IMAGE_INVALID_RESPONSE",
+      code: "AI_IMAGE_INVALID_RESPONSE",
       status: 502,
       retryable: false,
     });
   } catch (error: unknown) {
-    const normalized = normalizeProviderError(error, "gemini");
+    const normalized = normalizeProviderError(error, "ai");
     console.error(`Thumbnail generation failed with ${geminiImageModel}:`, normalized.code);
     throw normalized;
   }
@@ -976,7 +976,7 @@ export function parseThumbnailSuggestions(value: string): string[] {
     throw new ProviderError({
       message: "Gemini returned malformed thumbnail suggestions JSON",
       category: "invalid_response",
-      code: "GEMINI_THUMBNAIL_SUGGESTIONS_INVALID",
+      code: "AI_THUMBNAIL_SUGGESTIONS_INVALID",
       status: 502,
       retryable: false,
       cause,
@@ -988,7 +988,7 @@ export function parseThumbnailSuggestions(value: string): string[] {
     throw new ProviderError({
       message: "Gemini returned thumbnail suggestions that did not match the schema",
       category: "invalid_response",
-      code: "GEMINI_THUMBNAIL_SUGGESTIONS_INVALID",
+      code: "AI_THUMBNAIL_SUGGESTIONS_INVALID",
       status: 502,
       retryable: false,
       cause: result.error,
@@ -1013,7 +1013,7 @@ export async function generateThumbnailSuggestions(
 
     return parseThumbnailSuggestions(response.text || "");
   } catch (error: unknown) {
-    const normalized = normalizeProviderError(error, "gemini");
+    const normalized = normalizeProviderError(error, "ai");
     console.error("Thumbnail suggestions error:", normalized.code);
     throw normalized;
   }

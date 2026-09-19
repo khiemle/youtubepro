@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { ProviderError } from "./provider-errors";
-import { parseResearchInsightsResponse } from "./gemini";
+import { parseResearchInsightsResponse } from "./ai";
 
 function validResearchContent() {
   return {
@@ -78,7 +78,7 @@ describe("Gemini research response validation", () => {
     assert.throws(
       () => parseResearchInsightsResponse("```json\n{}\n```", "yt_12345678", 1),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_RESEARCH_INVALID_JSON",
+        && error.code === "AI_RESEARCH_INVALID_JSON",
     );
   });
 
@@ -86,7 +86,7 @@ describe("Gemini research response validation", () => {
     assert.throws(
       () => parseResearchInsightsResponse(JSON.stringify({ summary: "Only a summary" }), "yt_12345678", 1),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_RESEARCH_SCHEMA_MISMATCH",
+        && error.code === "AI_RESEARCH_SCHEMA_MISMATCH",
     );
   });
 
@@ -96,7 +96,7 @@ describe("Gemini research response validation", () => {
     assert.throws(
       () => parseResearchInsightsResponse(JSON.stringify(content), "yt_12345678", 1),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_RESEARCH_SAMPLE_MISMATCH",
+        && error.code === "AI_RESEARCH_SAMPLE_MISMATCH",
     );
   });
 
@@ -106,7 +106,7 @@ describe("Gemini research response validation", () => {
     assert.throws(
       () => parseResearchInsightsResponse(JSON.stringify(content), "yt_12345678", 1, undefined, ["video-1"]),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_RESEARCH_SNAPSHOT_MISMATCH",
+        && error.code === "AI_RESEARCH_SNAPSHOT_MISMATCH",
     );
   });
 
@@ -116,7 +116,7 @@ describe("Gemini research response validation", () => {
     assert.throws(
       () => parseResearchInsightsResponse(JSON.stringify(content), "yt_12345678", 1, undefined, ["video-1"]),
       (error: unknown) => error instanceof ProviderError
-        && error.code === "GEMINI_RESEARCH_UNKNOWN_SOURCE",
+        && error.code === "AI_RESEARCH_UNKNOWN_SOURCE",
     );
   });
 });

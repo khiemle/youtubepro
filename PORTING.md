@@ -5,8 +5,8 @@ The app is local-first and has no runtime database or authentication layer. For 
 ## Portable boundaries
 
 - Research backend: `server/youtube.ts`, `server/provider-errors.ts`, and the Research schemas in `shared/schema.ts`.
-- Evidence and AI backend: `server/gemini.ts`, `shared/evidence-contracts.ts`, and `server/script-regeneration-contract.ts`.
-- Thumbnail backend: `server/thumbnail-contract.ts`, `server/gemini-models.ts`, and the Thumbnail routes in `server/routes.ts`.
+- Evidence and AI backend: `server/ai.ts`, `shared/evidence-contracts.ts`, and `server/script-regeneration-contract.ts`.
+- Thumbnail backend: `server/thumbnail-contract.ts`, `server/provider-models.ts`, and the Thumbnail routes in `server/routes.ts`.
 - Client workflow: the Research, Script, Thumbnail, and Settings pages plus `client/src/lib/workflow-context.tsx`.
 
 The browser expects same-origin `/api` routes. The UI uses Wouter, TanStack Query, shadcn/ui primitives, and the design tokens in `client/src/index.css`.

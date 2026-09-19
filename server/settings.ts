@@ -2,7 +2,7 @@ import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Request } from "express";
 import { z } from "zod";
-import { configureGeminiApiKey, configureGeminiModels } from "./gemini";
+import { configureGeminiApiKey, configureGeminiModels } from "./ai";
 import {
   DEFAULT_GEMINI_IMAGE_MODEL,
   DEFAULT_GEMINI_TEXT_MODEL,
@@ -12,7 +12,7 @@ import {
   isGeminiTextModel,
   type GeminiImageModel,
   type GeminiTextModel,
-} from "./gemini-models";
+} from "./provider-models";
 
 const ENV_PATH = path.resolve(process.cwd(), ".env");
 const ENV_TEMP_PATH = path.resolve(process.cwd(), ".env.tmp");

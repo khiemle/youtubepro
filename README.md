@@ -89,7 +89,7 @@ You can instead start without keys and enter them in **Settings**. Settings writ
 | `PORT` | Local HTTP port | `5000` |
 | `HOST` | Bind address | `127.0.0.1` |
 
-The Settings page exposes the server allowlist and its current descriptions. Models are not hardcoded by the client. Changing the allowlist in `server/gemini-models.ts` changes the available Settings options.
+The Settings page exposes the server allowlist and its current descriptions. Models are not hardcoded by the client. Changing the allowlist in `server/provider-models.ts` changes the available Settings options.
 
 ## Data and request limits
 
