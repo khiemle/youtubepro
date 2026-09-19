@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { searchVideos } from "./youtube";
 import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnailSuggestions, extractNarrationText } from "./ai";
@@ -19,6 +19,18 @@ import {
 import { createRateLimiter } from "./rate-limit";
 
 const { middleware: rateLimit } = createRateLimiter();
+
+/**
+ * Refuses a non-local settings request before the rate limiter runs, so forwarded requests cannot
+ * consume the shared per-minute budget of the AI routes.
+ */
+function requireLocalSettingsRequest(req: Request, res: Response, next: NextFunction) {
+  res.setHeader("Cache-Control", "no-store");
+  if (!isLocalSettingsRequest(req)) {
+    return res.status(403).json({ error: "Settings are available only from this machine." });
+  }
+  return next();
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -49,12 +61,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/settings/test-higgsfield", rateLimit, async (req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    if (!isLocalSettingsRequest(req)) {
-      return res.status(403).json({ error: "Settings are available only from this machine." });
-    }
-
+  app.post("/api/settings/test-higgsfield", requireLocalSettingsRequest, rateLimit, async (req, res) => {
     try {
       return res.json(await testHiggsfieldConnection());
     } catch (error: unknown) {
@@ -82,11 +89,11 @@ export async function registerRoutes(
       const result = await searchVideos(filters);
       res.json(result);
     } catch (error: any) {
-      console.error("YouTube search error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid search parameters", details: error.errors });
       }
       const providerError = normalizeProviderError(error, "youtube");
+      logProviderFailure("YouTube search", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "YouTube Data API"));
     }
   });
@@ -100,8 +107,8 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid script input", details: error.errors });
       }
-      logProviderFailure("Script generation", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Script generation", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Script generation"));
     }
   });
@@ -115,8 +122,8 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid narration extraction request", details: error.errors });
       }
-      logProviderFailure("Narration extraction", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Narration extraction", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Narration extraction"));
     }
   });
@@ -131,8 +138,8 @@ export async function registerRoutes(
       const result = await generateIdeas(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      logProviderFailure("Ideas generation", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Ideas generation", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Ideas generation"));
     }
   });
@@ -152,8 +159,8 @@ export async function registerRoutes(
       const result = await generateResearchInsights(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      logProviderFailure("Research insights", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Research insights", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Research insights"));
     }
   });
@@ -172,8 +179,8 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid title regeneration request", details: error.errors });
       }
-      logProviderFailure("Title regeneration", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Title regeneration", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Title regeneration"));
     }
   });
@@ -195,8 +202,8 @@ export async function registerRoutes(
       const result = await regenerateSection(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      logProviderFailure("Section regeneration", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Section regeneration", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Section regeneration"));
     }
   });
@@ -218,8 +225,8 @@ export async function registerRoutes(
       const result = await regenerateParagraph(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      logProviderFailure("Paragraph regeneration", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Paragraph regeneration", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Paragraph regeneration"));
     }
   });
@@ -242,8 +249,8 @@ export async function registerRoutes(
       const result = await generateThumbnail(topic, config);
       res.json(result);
     } catch (error: unknown) {
-      logProviderFailure("Thumbnail generation", error);
       const providerError = normalizeProviderError(error, "higgsfield");
+      logProviderFailure("Thumbnail generation", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Thumbnail generation"));
     }
   });
@@ -265,8 +272,8 @@ export async function registerRoutes(
       const suggestions = await generateThumbnailSuggestions(parsed.data);
       res.json({ suggestions });
     } catch (error: unknown) {
-      logProviderFailure("Thumbnail suggestions", error);
       const providerError = normalizeProviderError(error, "ai");
+      logProviderFailure("Thumbnail suggestions", providerError);
       res.status(providerError.status).json(providerErrorPayload(providerError, "Thumbnail suggestions"));
     }
   });
