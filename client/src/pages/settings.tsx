@@ -359,10 +359,24 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading || !status ? (
+          {isLoading ? (
             <div className="flex min-h-48 items-center justify-center text-muted-foreground">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               Loading connection status
+            </div>
+          ) : !status ? (
+            <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
+              <p className="text-sm text-muted-foreground">
+                The connection settings could not be loaded.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+                data-testid="button-reload-settings"
+              >
+                Reload
+              </Button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -451,12 +465,12 @@ export default function SettingsPage() {
                     Runs a read-only balance check. It spends no credits.
                   </span>
                   {credits !== null && (
-                    <span className="text-sm text-green-500" data-testid="text-higgsfield-credits">
+                    <span className="text-sm text-green-500" role="status" data-testid="text-higgsfield-credits">
                       {credits} credits available
                     </span>
                   )}
                 </div>
-                {testError && <p className="text-sm text-destructive">{testError}</p>}
+                {testError && <p className="text-sm text-destructive" role="alert">{testError}</p>}
                 {higgsfieldConnected !== true && (
                   <p className="text-xs text-muted-foreground">
                     Connect it once with <code>{HIGGSFIELD_CONNECT_COMMAND}</code>, then run <code>/mcp</code> inside <code>claude</code> to sign in.
@@ -481,7 +495,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button type="submit" disabled={isSaving || Boolean(loadError)} data-testid="button-save-api-settings">
+                <Button type="submit" disabled={isSaving} data-testid="button-save-api-settings">
                   {isSaving ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
