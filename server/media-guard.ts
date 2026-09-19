@@ -21,6 +21,7 @@ export const HIGGSFIELD_MEDIA_EXACT_HOSTS = [
 const MAX_REDIRECTS = 2;
 const DOWNLOAD_ATTEMPTS = 3;
 const DOWNLOAD_BACKOFF_MS = [500, 1_500] as const;
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
 
@@ -38,6 +39,8 @@ export interface MediaDeps {
   policy: MediaUrlPolicy;
   sleep: (ms: number) => Promise<void>;
   maxBytes: number;
+  /** Per-hop, per-attempt request timeout, so a stalled allowlisted host cannot hold the route open. */
+  timeoutMs?: number;
 }
 
 export const DEFAULT_MEDIA_POLICY: MediaUrlPolicy = {
@@ -52,6 +55,7 @@ export const defaultMediaDeps: MediaDeps = {
   policy: DEFAULT_MEDIA_POLICY,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   maxBytes: 25 * 1024 * 1024,
+  timeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
 };
 
 // ---------------------------------------------------------------------------
@@ -249,7 +253,11 @@ async function guardedFetch(rawUrl: string, init: RequestInit, deps: MediaDeps):
   let current = rawUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     const url = await assertSafeMediaUrl(current, deps.policy);
-    const response = await deps.fetchImpl(url, { ...init, redirect: "manual" });
+    const response = await deps.fetchImpl(url, {
+      signal: AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS),
+      ...init,
+      redirect: "manual",
+    });
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
       await response.body?.cancel();

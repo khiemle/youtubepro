@@ -275,6 +275,15 @@ describe("downloadImage", () => {
     assert.equal((await rejection(downloadImage(`${base}/leave`, deps()))).code, "HIGGSFIELD_BAD_MEDIA");
   });
 
+  test("gives up on a stalled host after the configured timeout", { timeout: 5_000 }, async () => {
+    let requests = 0;
+    const base = await startServer(() => { requests += 1; });
+    const testDeps = deps({ timeoutMs: 100 });
+    const error = await rejection(downloadImage(`${base}/stalled.png`, testDeps));
+    assert.equal(error.code, "HIGGSFIELD_DOWNLOAD_FAILED");
+    assert.equal(requests, 3, "each of the three attempts must time out on its own");
+  });
+
   test("applies the URL policy before any request is made", async () => {
     let requested = false;
     const base = await startServer((_req, res) => { requested = true; res.end(PNG); });
@@ -308,6 +317,12 @@ describe("uploadBytes", () => {
   test("refuses an upload URL outside the policy", async () => {
     const error = await rejection(uploadBytes("https://evil.example/put", PNG, "image/png", deps({ policy: DEFAULT_MEDIA_POLICY })));
     assert.equal(error.code, "HIGGSFIELD_BAD_MEDIA");
+  });
+
+  test("reports a stalled host as HIGGSFIELD_UPLOAD_FAILED", { timeout: 5_000 }, async () => {
+    const base = await startServer(() => {});
+    const error = await rejection(uploadBytes(`${base}/upload/1`, PNG, "image/png", deps({ timeoutMs: 100 })));
+    assert.equal(error.code, "HIGGSFIELD_UPLOAD_FAILED");
   });
 
   test("reports a resolver failure as HIGGSFIELD_UPLOAD_FAILED", async () => {

@@ -167,7 +167,8 @@ export function buildMcpArgs(input: {
 /** Removes one wrapping markdown fence from a JSON reply. Anything else (prose, trailing text) is left for the strict parsers to reject. */
 export function stripJsonFence(text: string): string {
   const trimmed = text.trim();
-  const match = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
+  // The closing fence may sit on its own line or directly after the JSON, but nothing may follow it.
+  const match = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)(?:\r?\n)?```$/i.exec(trimmed);
   return match ? match[1].trim() : trimmed;
 }
 
@@ -296,7 +297,11 @@ export class ConcurrencyGate {
 
   acquire(waitMs: number): Promise<() => void> {
     return new Promise((resolve, reject) => {
+      // A second release must be a no-op: decrementing twice would over-admit past the cap.
+      let released = false;
       const release = () => {
+        if (released) return;
+        released = true;
         this.active -= 1;
         this.drain();
       };

@@ -87,8 +87,14 @@ describe("stripJsonFence", () => {
     assert.equal(stripJsonFence('```\n["x"]\n```'), '["x"]');
   });
 
+  test("removes a fence whose closing marker sits on the same line as the JSON", () => {
+    assert.equal(stripJsonFence('```json\n{"a":1}```'), '{"a":1}');
+    assert.equal(stripJsonFence('```\n["x"]```'), '["x"]');
+  });
+
   test("does not rescue prose around JSON, so the strict parsers still reject it", () => {
     assert.equal(stripJsonFence('```json\n{"a":1}\n```\nHope that helps!'), '```json\n{"a":1}\n```\nHope that helps!');
+    assert.equal(stripJsonFence('```json\n{"a":1}``` Hope that helps!'), '```json\n{"a":1}``` Hope that helps!');
     assert.equal(stripJsonFence('Here you go: {"a":1}'), 'Here you go: {"a":1}');
   });
 });
@@ -219,6 +225,21 @@ describe("ConcurrencyGate", () => {
     assert.equal(busy.code, "CLAUDE_BUSY");
     assert.equal(busy.status, 429);
     held();
+  });
+
+  test("ignores a second release, so a double release cannot over-admit past the cap", async () => {
+    const gate = new ConcurrencyGate(() => 1);
+    const release = await gate.acquire(1_000);
+    release();
+    release();
+
+    const first = await gate.acquire(1_000);
+    let secondGranted = false;
+    const second = gate.acquire(1_000).then((releaseSecond) => { secondGranted = true; return releaseSecond; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(secondGranted, false, "only one slot may be free after a double release");
+    first();
+    (await second)();
   });
 });
 
