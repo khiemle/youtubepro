@@ -1,4 +1,3 @@
-import { GoogleGenAI, Modality, ThinkingLevel } from "@google/genai";
 import type { IdeaGenerationRequest, IdeaGenerationResponse, ResearchInsightsRequest, ResearchInsightsResponse, ScriptEvidenceContext, ScriptInput, ScriptResult } from "@shared/schema";
 import {
   ideaGenerationOutputSchema,
@@ -10,16 +9,8 @@ import {
   TargetAudience,
   CreatorPersona,
 } from "@shared/schema";
-import { normalizeProviderError, ProviderError } from "./provider-errors";
-import {
-  DEFAULT_GEMINI_IMAGE_MODEL,
-  DEFAULT_GEMINI_TEXT_MODEL,
-  getGeminiImageModelLabel,
-  isGeminiImageModel,
-  isGeminiTextModel,
-  type GeminiImageModel,
-  type GeminiTextModel,
-} from "./provider-models";
+import { claudeText } from "./claude-cli";
+import { logProviderFailure, normalizeProviderError, ProviderError } from "./provider-errors";
 import {
   thumbnailSuggestionsSchema,
   type ThumbnailGenerationRequest,
@@ -31,33 +22,6 @@ import {
   type ScriptRegenerationOutput,
   type SectionRegenerationRequest,
 } from "./script-regeneration-contract";
-
-let geminiApiKey = process.env.GEMINI_API_KEY?.trim() || "";
-let geminiTextModel: GeminiTextModel = isGeminiTextModel(process.env.GEMINI_TEXT_MODEL || "")
-  ? process.env.GEMINI_TEXT_MODEL as GeminiTextModel
-  : DEFAULT_GEMINI_TEXT_MODEL;
-let geminiImageModel: GeminiImageModel = isGeminiImageModel(process.env.GEMINI_IMAGE_MODEL || "")
-  ? process.env.GEMINI_IMAGE_MODEL as GeminiImageModel
-  : DEFAULT_GEMINI_IMAGE_MODEL;
-
-if (!geminiApiKey) {
-  console.warn("Warning: GEMINI_API_KEY is not set. AI features will not work.");
-}
-
-let ai = new GoogleGenAI({ apiKey: geminiApiKey });
-
-export function configureGeminiApiKey(apiKey: string): void {
-  geminiApiKey = apiKey.trim();
-  process.env.GEMINI_API_KEY = geminiApiKey;
-  ai = new GoogleGenAI({ apiKey: geminiApiKey });
-}
-
-export function configureGeminiModels(textModel: GeminiTextModel, imageModel: GeminiImageModel): void {
-  geminiTextModel = textModel;
-  geminiImageModel = imageModel;
-  process.env.GEMINI_TEXT_MODEL = textModel;
-  process.env.GEMINI_IMAGE_MODEL = imageModel;
-}
 
 function getFormatGuidelines(format: VideoFormat): string {
   switch (format) {
@@ -169,10 +133,6 @@ Treat this as a description of abstract traits only. Do not imitate a real perso
 }
 
 export async function generateScript(input: ScriptInput): Promise<ScriptResult> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY environment variable.");
-  }
-
   const formatGuidelines = getFormatGuidelines(input.format);
   const audienceGuidelines = getAudienceGuidelines(input.audience);
   const personaGuidelines = getPersonaGuidelines(input.persona || CreatorPersona.NONE, input.customPersona);
@@ -242,15 +202,14 @@ Rules:
     let parsed: ReturnType<typeof parseScriptGenerationOutput> | undefined;
     let validationError = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await ai.models.generateContent({
-        model: geminiTextModel,
-        contents: attempt === 0
+      const responseText = await claudeText(
+        attempt === 0
           ? prompt
           : `${prompt}\n\nYour previous response failed validation: ${validationError}. Return a corrected strict JSON object only.`,
-        config: { responseMimeType: "application/json" },
-      });
+        { json: true },
+      );
       try {
-        parsed = parseScriptGenerationOutput(response.text || "");
+        parsed = parseScriptGenerationOutput(responseText);
         if (input.evidenceContext) {
           const allowedClaimIds = new Set(input.evidenceContext.evidenceClaims.map((claim) => claim.id));
           const unsupported = parsed.structure
@@ -296,9 +255,10 @@ Rules:
       },
       evidenceContext: input.evidenceContext,
     };
-  } catch (error: any) {
-    console.error("Gemini API error:", error);
-    throw new Error(error.message || "Failed to generate script");
+  } catch (error: unknown) {
+    logProviderFailure("Script generation", error);
+    if (error instanceof ProviderError) throw error;
+    throw new Error(error instanceof Error && error.message ? error.message : "Failed to generate script");
   }
 }
 
@@ -341,10 +301,6 @@ export function parseIdeaGenerationOutput(text: string, request: IdeaGenerationR
 export async function generateIdeas(
   request: IdeaGenerationRequest,
 ): Promise<IdeaGenerationResponse> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY environment variable.");
-  }
-
   validateEvidenceSourceIds(request.researchContext.evidenceClaims, request.researchContext.sourceVideoIds);
 
   const prompt = `You are a YouTube content strategist. Develop honest, testable video packages from the supplied evidence.
@@ -379,15 +335,14 @@ Evidence rules:
     let parsed: ReturnType<typeof parseIdeaGenerationOutput> | undefined;
     let validationError = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await ai.models.generateContent({
-        model: geminiTextModel,
-        contents: attempt === 0
+      const responseText = await claudeText(
+        attempt === 0
           ? prompt
           : `${prompt}\n\nYour previous response failed validation: ${validationError}. Return a corrected strict JSON object only.`,
-        config: { responseMimeType: "application/json" },
-      });
+        { json: true },
+      );
       try {
-        parsed = parseIdeaGenerationOutput(response.text || "", request);
+        parsed = parseIdeaGenerationOutput(responseText, request);
         break;
       } catch (error) {
         validationError = error instanceof Error ? error.message : "Invalid ideas response";
@@ -401,9 +356,10 @@ Evidence rules:
       generatedAt: new Date().toISOString(),
       snapshotId: request.researchContext.snapshotId,
     };
-  } catch (error: any) {
-    console.error("Gemini API error:", error);
-    throw new Error(error.message || "Failed to generate ideas");
+  } catch (error: unknown) {
+    logProviderFailure("Ideas generation", error);
+    if (error instanceof ProviderError) throw error;
+    throw new Error(error instanceof Error && error.message ? error.message : "Failed to generate ideas");
   }
 }
 
@@ -421,7 +377,7 @@ export function parseResearchInsightsResponse(
     parsedJson = JSON.parse(text);
   } catch (error) {
     throw new ProviderError({
-      message: "Gemini returned malformed research insight JSON.",
+      message: "The AI returned malformed research insight JSON.",
       category: "invalid_response",
       code: "AI_RESEARCH_INVALID_JSON",
       status: 502,
@@ -433,7 +389,7 @@ export function parseResearchInsightsResponse(
   const parsed = researchInsightsContentSchema.safeParse(parsedJson);
   if (!parsed.success) {
     throw new ProviderError({
-      message: "Gemini research insights did not match the required schema.",
+      message: "The AI research insights did not match the required schema.",
       category: "invalid_response",
       code: "AI_RESEARCH_SCHEMA_MISMATCH",
       status: 502,
@@ -443,7 +399,7 @@ export function parseResearchInsightsResponse(
   }
   if (parsed.data.methodology.sampleSize !== expectedSampleSize) {
     throw new ProviderError({
-      message: "Gemini research insights reported the wrong sample size.",
+      message: "The AI research insights reported the wrong sample size.",
       category: "invalid_response",
       code: "AI_RESEARCH_SAMPLE_MISMATCH",
       status: 502,
@@ -454,7 +410,7 @@ export function parseResearchInsightsResponse(
   for (const claim of parsed.data.evidenceClaims) {
     if (claim.snapshotId !== snapshotId) {
       throw new ProviderError({
-        message: "Gemini research evidence referenced the wrong snapshot.",
+        message: "The AI research evidence referenced the wrong snapshot.",
         category: "invalid_response",
         code: "AI_RESEARCH_SNAPSHOT_MISMATCH",
         status: 502,
@@ -467,7 +423,7 @@ export function parseResearchInsightsResponse(
       validateEvidenceSourceIds(parsed.data.evidenceClaims, allowedSourceVideoIds);
     } catch (error) {
       throw new ProviderError({
-        message: "Gemini research evidence referenced an unknown source video.",
+        message: "The AI research evidence referenced an unknown source video.",
         category: "invalid_response",
         code: "AI_RESEARCH_UNKNOWN_SOURCE",
         status: 502,
@@ -483,16 +439,6 @@ export function parseResearchInsightsResponse(
 export async function generateResearchInsights(
   input: ResearchInsightsRequest,
 ): Promise<ResearchInsightsResponse> {
-  if (!geminiApiKey) {
-    throw new ProviderError({
-      message: "Gemini API key is not configured.",
-      category: "missing_key",
-      code: "AI_MISSING_KEY",
-      status: 503,
-      retryable: false,
-    });
-  }
-
   const { query, videos, snapshotId } = input;
   const evidence = videos.slice(0, 50).map((video) => ({
     id: video.id,
@@ -611,26 +557,17 @@ Provide a detailed analysis in the following JSON format:
 Return ONLY valid JSON, no additional text or markdown.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: geminiTextModel,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        ...((geminiTextModel === "gemini-3.7-flash" || geminiTextModel === "gemini-3.1-pro-preview")
-          ? { thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH } }
-          : {}),
-      },
-    });
+    const responseText = await claudeText(prompt, { json: true });
 
     return parseResearchInsightsResponse(
-      response.text || "",
+      responseText,
       snapshotId,
       evidence.length,
       new Date().toISOString(),
       input.provenance.orderedVideoIds,
     );
   } catch (error: unknown) {
-    console.error("Gemini API error:", error);
+    logProviderFailure("Research insights", error);
     throw normalizeProviderError(error, "ai");
   }
 }
@@ -641,10 +578,6 @@ export async function regenerateTitles(
   audience: TargetAudience,
   evidenceContext?: ScriptEvidenceContext,
 ): Promise<string[]> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured.");
-  }
-
   if (evidenceContext) {
     validateEvidenceSourceIds(evidenceContext.evidenceClaims, evidenceContext.sourceVideoIds);
   }
@@ -666,24 +599,24 @@ Return one strict JSON object with exactly one key, "titles", containing exactly
   try {
     let validationError = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await ai.models.generateContent({
-        model: geminiTextModel,
-        contents: attempt === 0
+      const responseText = await claudeText(
+        attempt === 0
           ? prompt
           : `${prompt}\n\nYour previous response failed validation: ${validationError}. Return corrected JSON only.`,
-        config: { responseMimeType: "application/json" },
-      });
+        { json: true },
+      );
       try {
-        const parsed = titleRegenerationOutputSchema.parse(JSON.parse(response.text || ""));
+        const parsed = titleRegenerationOutputSchema.parse(JSON.parse(responseText));
         return parsed.titles;
       } catch (error) {
         validationError = error instanceof Error ? error.message : "Invalid title response";
       }
     }
     throw new Error(`Invalid title response after one repair attempt: ${validationError}`);
-  } catch (error: any) {
-    console.error("Title regeneration error:", error);
-    throw new Error(error.message || "Failed to regenerate titles");
+  } catch (error: unknown) {
+    logProviderFailure("Title regeneration", error);
+    if (error instanceof ProviderError) throw error;
+    throw new Error(error instanceof Error && error.message ? error.message : "Failed to regenerate titles");
   }
 }
 
@@ -691,16 +624,6 @@ async function generateScriptRegeneration(
   prompt: string,
   evidenceContext?: ScriptEvidenceContext,
 ): Promise<ScriptRegenerationOutput> {
-  if (!geminiApiKey) {
-    throw new ProviderError({
-      message: "Gemini API key is not configured.",
-      category: "missing_key",
-      code: "AI_MISSING_KEY",
-      status: 503,
-      retryable: false,
-    });
-  }
-
   if (evidenceContext) {
     validateEvidenceSourceIds(evidenceContext.evidenceClaims, evidenceContext.sourceVideoIds);
     validateEvidenceSourceIds(evidenceContext.ideaPackage.evidenceClaims, evidenceContext.sourceVideoIds);
@@ -709,21 +632,20 @@ async function generateScriptRegeneration(
   try {
     let validationError = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await ai.models.generateContent({
-        model: geminiTextModel,
-        contents: attempt === 0
+      const responseText = await claudeText(
+        attempt === 0
           ? prompt
           : `${prompt}\n\nYour previous response failed validation: ${validationError}. Return corrected JSON only.`,
-        config: { responseMimeType: "application/json" },
-      });
+        { json: true },
+      );
       try {
-        return parseScriptRegenerationOutput(response.text || "", evidenceContext);
+        return parseScriptRegenerationOutput(responseText, evidenceContext);
       } catch (error) {
         validationError = error instanceof Error ? error.message : "Invalid regeneration response";
       }
     }
     throw new ProviderError({
-      message: `Gemini returned an invalid script revision after one repair attempt: ${validationError}`,
+      message: `The AI returned an invalid script revision after one repair attempt: ${validationError}`,
       category: "invalid_response",
       code: "AI_SCRIPT_REGENERATION_INVALID",
       status: 502,
@@ -888,69 +810,6 @@ Quality and integrity requirements:
 - Return one polished thumbnail image at 16:9.`;
 }
 
-export async function generateThumbnail(
-  topic: string,
-  config: ThumbnailConfig
-): Promise<ThumbnailResult> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured. Add it in Settings before generating a thumbnail.");
-  }
-  const contentParts: any[] = [];
-  for (const reference of config.referenceImages) {
-    const match = /^data:(image\/(?:png|jpeg));base64,(.+)$/.exec(reference.image);
-    if (!match) continue;
-    contentParts.push({
-      inlineData: {
-        mimeType: match[1],
-        data: match[2],
-      },
-    });
-  }
-
-  const prompt = buildThumbnailPrompt(topic, config);
-
-  contentParts.push({ text: prompt });
-
-  try {
-    const response = await ai.models.generateContent({
-      model: geminiImageModel,
-      contents: [{ role: "user", parts: contentParts }],
-      config: {
-        responseModalities: [Modality.TEXT, Modality.IMAGE],
-        imageConfig: {
-          aspectRatio: "16:9",
-        },
-      } as any,
-    });
-
-    const candidate = response.candidates?.[0];
-    const imagePart = candidate?.content?.parts?.find((part: any) => part.inlineData);
-
-    if (imagePart?.inlineData?.data) {
-      const mimeType = imagePart.inlineData.mimeType || "image/png";
-      const imageData = `data:${mimeType};base64,${imagePart.inlineData.data}`;
-      return {
-        imageData,
-        prompt,
-        model: `${getGeminiImageModelLabel(geminiImageModel)} (${geminiImageModel})`,
-      };
-    }
-
-    throw new ProviderError({
-      message: "Gemini returned an invalid response without image data",
-      category: "invalid_response",
-      code: "AI_IMAGE_INVALID_RESPONSE",
-      status: 502,
-      retryable: false,
-    });
-  } catch (error: unknown) {
-    const normalized = normalizeProviderError(error, "ai");
-    console.error(`Thumbnail generation failed with ${geminiImageModel}:`, normalized.code);
-    throw normalized;
-  }
-}
-
-
 export function buildThumbnailSuggestionsPrompt(request: ThumbnailSuggestionsRequest): string {
   return `Generate exactly five short text options for a YouTube thumbnail.
 
@@ -974,7 +833,7 @@ export function parseThumbnailSuggestions(value: string): string[] {
     parsed = JSON.parse(value.trim());
   } catch (cause) {
     throw new ProviderError({
-      message: "Gemini returned malformed thumbnail suggestions JSON",
+      message: "The AI returned malformed thumbnail suggestions JSON",
       category: "invalid_response",
       code: "AI_THUMBNAIL_SUGGESTIONS_INVALID",
       status: 502,
@@ -986,7 +845,7 @@ export function parseThumbnailSuggestions(value: string): string[] {
   const result = thumbnailSuggestionsSchema.safeParse(parsed);
   if (!result.success) {
     throw new ProviderError({
-      message: "Gemini returned thumbnail suggestions that did not match the schema",
+      message: "The AI returned thumbnail suggestions that did not match the schema",
       category: "invalid_response",
       code: "AI_THUMBNAIL_SUGGESTIONS_INVALID",
       status: 502,
@@ -1000,18 +859,12 @@ export function parseThumbnailSuggestions(value: string): string[] {
 export async function generateThumbnailSuggestions(
   request: ThumbnailSuggestionsRequest,
 ): Promise<string[]> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured");
-  }
   const prompt = buildThumbnailSuggestionsPrompt(request);
 
   try {
-    const response = await ai.models.generateContent({
-      model: geminiTextModel,
-      contents: prompt,
-    });
+    const responseText = await claudeText(prompt, { json: true });
 
-    return parseThumbnailSuggestions(response.text || "");
+    return parseThumbnailSuggestions(responseText);
   } catch (error: unknown) {
     const normalized = normalizeProviderError(error, "ai");
     console.error("Thumbnail suggestions error:", normalized.code);
@@ -1021,10 +874,6 @@ export async function generateThumbnailSuggestions(
 
 
 export async function extractNarrationText(scriptContent: string): Promise<string> {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key is not configured");
-  }
-
   const prompt = `You are a script-to-speech text extractor. Your job is to extract ONLY the words that a narrator would actually SAY OUT LOUD.
 
 INPUT SCRIPT:
@@ -1053,13 +902,7 @@ If the input has no speakable content, return exactly: [No narration content]
 EXTRACTED NARRATION:`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: geminiTextModel,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
-
-    let text = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    text = text.trim();
+    let text = (await claudeText(prompt, { json: false })).trim();
 
     // If AI returned the special marker or empty, return empty string
     if (text === "[No narration content]" || !text) {
@@ -1081,8 +924,9 @@ EXTRACTED NARRATION:`;
       .trim();
 
     return text;
-  } catch (error: any) {
-    console.error("Error extracting narration text:", error);
+  } catch (error: unknown) {
+    logProviderFailure("Narration extraction", error);
+    if (error instanceof ProviderError) throw error;
     throw new Error("Failed to extract narration text from script");
   }
 }

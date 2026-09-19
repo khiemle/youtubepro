@@ -59,7 +59,7 @@ function validResearchContent() {
   };
 }
 
-describe("Gemini research response validation", () => {
+describe("research response validation", () => {
   test("echoes the snapshot identity after strict validation", () => {
     const generatedAt = "2026-08-24T10:00:00.000Z";
     const result = parseResearchInsightsResponse(

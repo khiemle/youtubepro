@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/form";
 import { EmptyState } from "@/components/empty-state";
 import { apiRequest } from "@/lib/queryClient";
+import { readApiErrorBody } from "@shared/api-error-message";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkflow } from "@/lib/workflow-context";
 import { StarryBackground } from "@/components/ui/starry-background";
@@ -97,21 +98,23 @@ interface ScriptActionError {
 
 function providerAwareScriptError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : String(error || "");
+  const serverGuidance = readApiErrorBody(message)?.suggestion;
+  if (serverGuidance) return serverGuidance;
   const normalized = message.toLowerCase();
   if (normalized.includes("quota") || normalized.includes("rate limit") || normalized.includes("too many")) {
-    return "Gemini usage is temporarily limited. Wait for the provider window to reset, then retry.";
+    return "AI usage is temporarily limited. Wait for your usage window to reset, then retry.";
   }
   if (normalized.includes("api key") || normalized.includes("unauthorized") || normalized.includes("authentication")) {
-    return "Gemini could not authenticate. Check the configured key in Settings, then retry.";
+    return "The AI could not sign in. Check the Claude sign-in in Settings, then retry.";
   }
   if (normalized.includes("timeout") || normalized.includes("timed out")) {
-    return "Gemini took too long to respond. Your current script is unchanged. Retry when ready.";
+    return "The AI took too long to respond. Your current script is unchanged. Retry when ready.";
   }
   if (normalized.includes("network") || normalized.includes("fetch") || normalized.includes("offline")) {
     return "The provider could not be reached. Check your connection, then retry.";
   }
   if (normalized.includes("schema") || normalized.includes("invalid") || normalized.includes("evidence")) {
-    return "Gemini returned an unsafe or malformed revision. Your current script is unchanged. Retry to request a corrected response.";
+    return "The AI returned an unsafe or malformed revision. Your current script is unchanged. Retry to request a corrected response.";
   }
   return message || fallback;
 }

@@ -47,7 +47,7 @@ describe("thumbnail generation request contract", () => {
   test("rejects a client-selected image model", () => {
     assert.equal(thumbnailGenerationRequestSchema.safeParse({
       ...validRequest(),
-      model: "gemini-3-pro-image",
+      model: "gpt_image_2_5",
     }).success, false);
   });
 

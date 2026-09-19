@@ -1,12 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { searchVideos } from "./youtube";
-import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnail, generateThumbnailSuggestions, extractNarrationText } from "./ai";
-import { testHiggsfieldConnection } from "./higgsfield-image";
+import { generateScript, generateIdeas, generateResearchInsights, regenerateTitles, regenerateSection, regenerateParagraph, generateThumbnailSuggestions, extractNarrationText } from "./ai";
+import { generateThumbnail, testHiggsfieldConnection } from "./higgsfield-image";
 import { ideaGenerationRequestSchema, researchInsightsRequestSchema, searchFiltersSchema, scriptInputSchema } from "@shared/schema";
 import { z } from "zod";
 import { apiKeySettingsSchema, getApiKeyStatus, isLocalSettingsRequest, saveApiKeySettings } from "./settings";
-import { normalizeProviderError, providerErrorPayload } from "./provider-errors";
+import { logProviderFailure, normalizeProviderError, providerErrorPayload } from "./provider-errors";
 import { thumbnailGenerationRequestSchema, thumbnailSuggestionsRequestSchema } from "./thumbnail-contract";
 import {
   paragraphRegenerationRequestSchema,
@@ -19,43 +19,6 @@ import {
 import { createRateLimiter } from "./rate-limit";
 
 const { middleware: rateLimit } = createRateLimiter();
-
-function getUserFriendlyError(error: any, context: string): { message: string; suggestion: string } {
-  const errorMessage = error?.message?.toLowerCase() || "";
-
-  if (errorMessage.includes("api key") || errorMessage.includes("authentication") || errorMessage.includes("unauthorized")) {
-    return {
-      message: `${context} is temporarily unavailable`,
-      suggestion: "Please try again in a moment. If the problem persists, contact support."
-    };
-  }
-
-  if (errorMessage.includes("rate limit") || errorMessage.includes("quota") || errorMessage.includes("too many")) {
-    return {
-      message: `${context} is experiencing high demand`,
-      suggestion: "Please wait a minute and try again."
-    };
-  }
-
-  if (errorMessage.includes("timeout") || errorMessage.includes("timed out") || errorMessage.includes("network")) {
-    return {
-      message: `${context} took too long to respond`,
-      suggestion: "Please check your connection and try again."
-    };
-  }
-
-  if (errorMessage.includes("content") || errorMessage.includes("safety") || errorMessage.includes("blocked")) {
-    return {
-      message: `${context} couldn't process this content`,
-      suggestion: "Try rephrasing your request or using different keywords."
-    };
-  }
-
-  return {
-    message: `${context} encountered an issue`,
-    suggestion: "Please try again. If the problem persists, try refreshing the page."
-  };
-}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -134,12 +97,12 @@ export async function registerRoutes(
       const result = await generateScript(input);
       res.json(result);
     } catch (error: any) {
-      console.error("Script generation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid script input", details: error.errors });
       }
-      const friendly = getUserFriendlyError(error, "Script generation");
-      res.status(500).json({ error: friendly.message, suggestion: friendly.suggestion });
+      logProviderFailure("Script generation", error);
+      const providerError = normalizeProviderError(error, "ai");
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Script generation"));
     }
   });
 
@@ -149,12 +112,12 @@ export async function registerRoutes(
       const narration = await extractNarrationText(scriptContent);
       res.json({ narration });
     } catch (error: any) {
-      console.error("Narration extraction error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid narration extraction request", details: error.errors });
       }
-      const friendly = getUserFriendlyError(error, "Narration extraction");
-      res.status(500).json({ error: friendly.message, suggestion: friendly.suggestion });
+      logProviderFailure("Narration extraction", error);
+      const providerError = normalizeProviderError(error, "ai");
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Narration extraction"));
     }
   });
 
@@ -168,9 +131,9 @@ export async function registerRoutes(
       const result = await generateIdeas(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      console.error("Ideas generation error:", error);
+      logProviderFailure("Ideas generation", error);
       const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini Ideas"));
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Ideas generation"));
     }
   });
 
@@ -189,9 +152,9 @@ export async function registerRoutes(
       const result = await generateResearchInsights(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      console.error("Research insights error:", error);
+      logProviderFailure("Research insights", error);
       const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini research"));
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Research insights"));
     }
   });
 
@@ -206,12 +169,12 @@ export async function registerRoutes(
       );
       res.json({ titles });
     } catch (error: any) {
-      console.error("Title regeneration error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid title regeneration request", details: error.errors });
       }
-      const friendly = getUserFriendlyError(error, "Title regeneration");
-      res.status(500).json({ error: friendly.message, suggestion: friendly.suggestion });
+      logProviderFailure("Title regeneration", error);
+      const providerError = normalizeProviderError(error, "ai");
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Title regeneration"));
     }
   });
 
@@ -232,9 +195,9 @@ export async function registerRoutes(
       const result = await regenerateSection(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      console.error("Section regeneration error:", error);
+      logProviderFailure("Section regeneration", error);
       const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini section regeneration"));
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Section regeneration"));
     }
   });
 
@@ -255,9 +218,9 @@ export async function registerRoutes(
       const result = await regenerateParagraph(parsed.data);
       res.json(result);
     } catch (error: unknown) {
-      console.error("Paragraph regeneration error:", error);
+      logProviderFailure("Paragraph regeneration", error);
       const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini paragraph regeneration"));
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Paragraph regeneration"));
     }
   });
 
@@ -279,9 +242,9 @@ export async function registerRoutes(
       const result = await generateThumbnail(topic, config);
       res.json(result);
     } catch (error: unknown) {
-      console.error("Thumbnail generation error:", error);
-      const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini image generation"));
+      logProviderFailure("Thumbnail generation", error);
+      const providerError = normalizeProviderError(error, "higgsfield");
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Thumbnail generation"));
     }
   });
 
@@ -302,9 +265,9 @@ export async function registerRoutes(
       const suggestions = await generateThumbnailSuggestions(parsed.data);
       res.json({ suggestions });
     } catch (error: unknown) {
-      console.error("Thumbnail suggestions error:", error);
+      logProviderFailure("Thumbnail suggestions", error);
       const providerError = normalizeProviderError(error, "ai");
-      res.status(providerError.status).json(providerErrorPayload(providerError, "Gemini thumbnail suggestions"));
+      res.status(providerError.status).json(providerErrorPayload(providerError, "Thumbnail suggestions"));
     }
   });
 

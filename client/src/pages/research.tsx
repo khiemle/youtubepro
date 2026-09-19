@@ -146,10 +146,10 @@ function errorPresentation(category: ApiErrorCategory) {
 
 function aiErrorTitle(category: ApiErrorCategory | null): string {
   switch (category) {
-    case "missing_key": return "Gemini API key required";
-    case "invalid_key": return "Gemini API key was rejected";
-    case "quota": return "Gemini quota is unavailable";
-    case "timeout": return "Gemini took too long to respond";
+    case "missing_key": return "AI setup required";
+    case "invalid_key": return "AI sign-in needs attention";
+    case "quota": return "AI usage limit reached";
+    case "timeout": return "The AI took too long to respond";
     case "offline": return "You appear to be offline";
     case "server": return "AI service is temporarily unavailable";
     default: return "AI Insights unavailable";

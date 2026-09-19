@@ -28,7 +28,7 @@ const guideItems = [
   {
     label: "Settings",
     icon: Settings,
-    description: "Connect local API keys and choose the Gemini text and image models.",
+    description: "Connect YouTube, check the Claude sign-in, and choose the text and image models.",
   },
   {
     label: "New Workflow",
